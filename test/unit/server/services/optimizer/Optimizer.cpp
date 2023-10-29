@@ -72,6 +72,7 @@ protected:
 
     void populateTransfers(const Pair &pair, const std::string &state, int count,
         bool recoverable = false, double thr = 10, uint64_t filesize = 1024) {
+
         auto &transfers = transferStore[pair];
 
         for (int i = 0; i < count; i++) {
@@ -394,6 +395,7 @@ BOOST_FIXTURE_TEST_CASE (optimizerRangeSeConfig, OptimizerRangeSeFixture)
 
     Range range;
     StorageLimits limits;
+    getStorageLimits(pair, &limits);
     getOptimizerWorkingRange(pair, limits, &range);
 
     BOOST_CHECK(!range.specific);
@@ -424,6 +426,7 @@ BOOST_FIXTURE_TEST_CASE (optimizerRangeSetFixture, OptimizerRangeSetFixture)
 
     Range range;
     StorageLimits limits;
+    getStorageLimits(pair, &limits);
     getOptimizerWorkingRange(pair, limits, &range);
 
     BOOST_CHECK(range.specific);
@@ -446,6 +449,7 @@ BOOST_FIXTURE_TEST_CASE (optimizerFirstRun, BaseOptimizerFixture)
 
     Range range;
     StorageLimits limits;
+    getStorageLimits(pair, &limits);
     getOptimizerWorkingRange(pair, limits, &range);
 
     BOOST_CHECK_LE(lastEntry->activeDecision, range.max);

@@ -112,7 +112,6 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
 // Uses StorageLimits for a hard max.
 void Optimizer::getOptimizerWorkingRange(const Pair &pair, const StorageLimits &limits, Range *range)
 {
-     
     // Query specific limits
     dataSource->getPairLimits(pair, range);
 
