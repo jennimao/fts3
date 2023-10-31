@@ -108,6 +108,59 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
     }
 }
 
+void Optimizer::getCurrentIntervalDestinationState(const std::list<Destination> &destinations)
+{
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "RYAN Opt3.0" << commit;
+    // Initializes currentSEStateMap with limit information from
+    // t_se table in the SQL database.
+    dataSource->dumpStorageStates(&currentSEStateMap);
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "RYAN Opt3.1" << commit;
+
+    for (auto i = destinations.begin(); i != destinations.end(); ++i) {
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "RYAN Opt3." << *i << commit;
+        // ===============================================        
+        // STEP 1: DERIVING PAIR STATE
+        // ===============================================        
+       
+        // Initialize the PairState object we will store information in
+        Destination destination = *i;
+        DestinationState current;
+
+        // Compute the values that will be saved in PairState
+        current.timestamp = time(NULL);
+        current.avgDuration = dataSource->getAverageDuration(destination, boost::posix_time::minutes(30));
+        boost::posix_time::time_duration timeFrame = fts3::optimizer::calculateTimeFrame(current.avgDuration);
+
+        current.activeCount = dataSource->getActive(pair);
+        current.successRate = dataSource->getSuccessRateForPair(pair, timeFrame, &current.retryCount);
+        current.queueSize = dataSource->getSubmitted(pair);
+
+        // Compute throughput values (used in Step 2)      
+        dataSource->getThroughputInfo(pair, timeFrame,
+          &(current.throughput), &(current.filesizeAvg), &(current.filesizeStdDev));
+        
+        // Save to map
+        currentPairStateMap[pair] = current;
+        
+        // ===============================================        
+        // STEP 2: DERIVING SE STATE FROM PAIR STATE
+        // ===============================================   
+
+        // Increments SE throughput value by the pair's throughput value.
+        // Because the default and current majority state is no throughput limitation,
+        // the if condition is added.
+        if(currentSEStateMap.find(pair.source) != currentSEStateMap.end() 
+           && currentSEStateMap[pair.source].outbound_max_throughput > 0) {
+            currentSEStateMap[pair.source].asSourceThroughput += current.throughput;
+        }
+
+        if(currentSEStateMap.find(pair.destination) != currentSEStateMap.end()
+           && currentSEStateMap[pair.destination].inbound_max_throughput > 0) {
+            currentSEStateMap[pair.destination].asDestThroughput += current.throughput;
+        }
+    }
+}
+
 // Reads limits into Range object for a pair.
 // Uses StorageLimits for a hard max.
 void Optimizer::getOptimizerWorkingRange(const Pair &pair, const StorageLimits &limits, Range *range)

@@ -31,6 +31,7 @@
 #include <db/generic/LinkConfig.h>
 #include <db/generic/Pair.h>
 #include <msg-bus/producer.h>
+#include <db/generic/Destination.h>
 
 #include "common/Uri.h"
 
@@ -125,6 +126,31 @@ struct StorageState {
     */
 };
 
+struct DestinationState {
+    time_t timestamp;
+    double throughput;
+    time_t avgDuration;
+    double successRate;
+    int retryCount;
+    int activeCount;
+    int queueSize;
+    // Exponential Moving Average
+    double ema;
+    // Filesize statistics
+    double filesizeAvg, filesizeStdDev;
+    // Optimizer last decision
+    int connections;
+    double avgTput;
+    
+    DestinationState(): timestamp(0), throughput(0), avgDuration(0), successRate(0), retryCount(0), activeCount(0),
+                 queueSize(0), ema(0), filesizeAvg(0), filesizeStdDev(0), connections(1), avgTput(0) {}
+
+    DestinationState(time_t ts, double thr, time_t ad, double sr, int rc, int ac, int qs, double ema, int conn):
+        timestamp(ts), throughput(thr), avgDuration(ad), successRate(sr), retryCount(rc),
+        activeCount(ac), queueSize(qs), ema(ema), filesizeAvg(0), filesizeStdDev(0), connections(conn),
+        avgTput(0) {}
+};
+
 // To decouple the optimizer core logic from the data storage/representation
 class OptimizerDataSource {
 public:
@@ -133,6 +159,9 @@ public:
 
     // Return a list of pairs with active or submitted transfers
     virtual std::list<Pair> getActivePairs(void) = 0;
+
+    // Return a list of destinations with active or submitted transfers
+    virtual std::list<Destination> getActiveDestinations(void) = 0;
 
     virtual void dumpStorageStates(std::map<std::string, StorageState> *currentSEStateMap) = 0;
 
@@ -242,6 +271,7 @@ protected:
         int diff, const std::string &rationale, boost::timer::cpu_times elapsed);
 
     void getCurrentIntervalInputState(const std::list<Pair> &);
+    void getCurrentIntervalDestinationState(const std::list<Destination> &);
 public:
     Optimizer(OptimizerDataSource *ds, OptimizerCallbacks *callbacks);
     ~Optimizer();

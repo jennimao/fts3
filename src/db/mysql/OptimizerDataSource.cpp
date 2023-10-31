@@ -131,6 +131,24 @@ public:
         return result;
     }
 
+    std::list<Destination> getActiveDestinations(void) {
+        std::list<Destination> result;
+
+        soci::rowset<soci::row> rs = (sql.prepare <<
+            "SELECT DISTINCT dest_se "
+            "FROM t_file "
+            "WHERE file_state IN ('ACTIVE', 'SUBMITTED') "
+            "GROUP BY dest_se, file_state "
+            "ORDER BY NULL"
+        );
+
+        for (auto i = rs.begin(); i != rs.end(); ++i) {
+            result.push_back(Destination(i->get<std::string>("dest_se")));
+        }
+
+        return result;
+    }
+
     // Function reads in all values from the t_se table, which specify
     //   - inbound and outbound throughput from every SE
     //   - inbound and outbound maximum number of connections from every SE.
@@ -365,6 +383,20 @@ public:
             soci::into(avgDuration, isNullAvg);
 
         return avgDuration;
+    }
+
+    time_t getAverageDuration(const Destination &destination, const boost::posix_time::time_duration &interval) {
+    double avgDuration = 0.0;
+    soci::indicator isNullAvg = soci::i_ok;
+
+    sql << "SELECT AVG(tx_duration) FROM t_file USE INDEX(idx_finish_time)"
+        " WHERE dest_se = :dest AND file_state IN ('FINISHED', 'ARCHIVING') AND "
+        "   tx_duration > 0 AND tx_duration IS NOT NULL AND "
+        "   finish_time > (UTC_TIMESTAMP() - INTERVAL :interval SECOND) LIMIT 1",
+        soci::use(destination.destination), soci::use(interval.total_seconds()),
+        soci::into(avgDuration, isNullAvg);
+
+    return avgDuration;
     }
 
     double getSuccessRateForPair(const Pair &pair, const boost::posix_time::time_duration &interval,

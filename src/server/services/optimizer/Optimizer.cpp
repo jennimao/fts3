@@ -99,15 +99,18 @@ void Optimizer::run(void)
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "RYAN Opt1" << commit;
 
         std::list<Pair> pairs = dataSource->getActivePairs();
+        std::list<Destination> destinations = dataSource->getActiveDestinations();
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "RYAN Opt2" << commit;
         // Make sure the order is always the same
         // See FTS-1094
         pairs.sort();
+        destinations.sort();
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "RYAN Opt3" << commit;
 
 
         // Part 1 of Optimizer: Updating global information about performance on all pairs.
         Optimizer::getCurrentIntervalInputState(pairs);
+        Optimizer::getCurrentIntervalDestinationState(destinations);
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "RYAN Opt4" << commit;
 
         // Part 2 of Optimizer: Using state to compute "decisions" for number of concurrent connections
