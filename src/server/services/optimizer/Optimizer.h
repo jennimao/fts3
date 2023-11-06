@@ -71,16 +71,25 @@ struct PairState {
     // Filesize statistics
     double filesizeAvg, filesizeStdDev;
     // Optimizer last decision
-    int connections;
+    int decision;
     double avgTput;
+    //The 
+    double runningAvgConnections; //Must notify optimizer when we create and close a new connection
+    double previousRunningAvgConnections;
+    int epoch;
+    int previousEpoch;
+    double gradient;
+    int proposedDecision;
+    bool isGradientDefined;
     
     PairState(): timestamp(0), throughput(0), avgDuration(0), successRate(0), retryCount(0), activeCount(0),
-                 queueSize(0), ema(0), filesizeAvg(0), filesizeStdDev(0), connections(1), avgTput(0) {}
+                 queueSize(0), ema(0), filesizeAvg(0), filesizeStdDev(0), decision(1), avgTput(0), 
+                 runningAvgConnections(0), previousRunningAvgConnections(0), epoch(0), gradient(0), proposedDecision(0), isGradientDefined(false) {}
 
     PairState(time_t ts, double thr, time_t ad, double sr, int rc, int ac, int qs, double ema, int conn):
         timestamp(ts), throughput(thr), avgDuration(ad), successRate(sr), retryCount(rc),
-        activeCount(ac), queueSize(qs), ema(ema), filesizeAvg(0), filesizeStdDev(0), connections(conn),
-        avgTput(0) {}
+        activeCount(ac), queueSize(qs), ema(ema), filesizeAvg(0), filesizeStdDev(0), decision(conn),
+        avgTput(0), runningAvgConnections(0), previousRunningAvgConnections(0), epoch(0), gradient(0), proposedDecision(0), isGradientDefined(false) {}
 };
 
 struct StorageState {
@@ -229,6 +238,8 @@ protected:
     // Gets and saves current performance on all pairs and storage elements 
     // in currentPairStateMap and currentSEStateMap
     void getCurrentIntervalInputState(const std::list<Pair> &);
+
+    void enforceStorageLimits(const std::list<Pair> &);
 public:
     Optimizer(OptimizerDataSource *ds, OptimizerCallbacks *callbacks);
     ~Optimizer();
@@ -246,6 +257,9 @@ public:
     void updateDecisions(const std::list<Pair> &);
     void run(void);
     void runOptimizerForPair(const Pair&);
+
+
+    int notifyOptimizer(Pair pair, int connectionChange);
 };
 
 

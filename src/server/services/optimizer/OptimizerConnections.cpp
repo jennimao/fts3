@@ -106,6 +106,17 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
     }
 }
 
+
+void Optimizer::enforceStorageLimits(const std::list<Pair> &pairs)
+{
+    //iterate through all SE element
+        //check if the SE throuighout is over the limit
+    
+        //if it is, then filter all the pairs in the list that use that SE
+            //caclualte proposed slash (their throughpout/tot throuughput * # of connections the element has)
+
+}
+
 // Reads limits into Range object for a pair.
 // Uses StorageLimits for a hard max.
 void Optimizer::getOptimizerWorkingRange(const Pair &pair, const StorageLimits &limits, Range *range)
@@ -312,6 +323,7 @@ bool Optimizer::optimizeConnectionsForPair(OptimizerMode optMode, const Pair &pa
         return true;
     }
 
+
     // Apply bandwidth limits (source) for both window based approximation and instantaneous throughput.
     if (limits.throughputSource > 0) {
         if (currentSEStateMap[pair.source].asSourceThroughput > limits.throughputSource) {
@@ -444,7 +456,7 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
 
     //Stores current PairState (including the optimizer decision) in the previousPairStateMap
     previousPairStateMap[pair] = current;
-    previousPairStateMap[pair].connections = decision;
+    previousPairStateMap[pair].decision = decision;
     
     dataSource->storeOptimizerDecision(pair, decision, current, diff, rationale);
 
@@ -452,6 +464,12 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
         callbacks->notifyDecision(pair, decision, current, diff, rationale);
     }
 }
+
+
+ int Optimizer::notifyOptimizer(Pair pair, int connectionChange)
+ {
+
+ }
 
 }
 }

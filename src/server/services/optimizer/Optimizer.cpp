@@ -104,6 +104,9 @@ void Optimizer::run(void)
         // Part 1 of Optimizer: Updating global information about performance on all pairs.
         Optimizer::getCurrentIntervalInputState(pairs);
 
+        //enforce storage limits
+        Optimizer::enforceStorageLimits(pairs);
+
         // Part 2 of Optimizer: Using state to compute "decisions" for number of concurrent connections
         // on each pair.
         Optimizer::updateDecisions(pairs);
