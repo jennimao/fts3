@@ -202,11 +202,11 @@ static int optimizeLowSuccessRate(const PairState &current, const PairState &pre
     }
         // If worse or the same, step back
     else if (current.successRate < previous.successRate) {
-        decision = previousValue - decreaseStepSize;
+        decision = previousValue - (decreaseStepSize * current.weight);
         rationale << "Bad link efficiency";
     }
     else {
-        decision = previousValue - decreaseStepSize;
+        decision = previousValue - (decreaseStepSize * current.weight);
         rationale << "Bad link efficiency, no changes";
     }
 
@@ -235,12 +235,12 @@ static int optimizeGoodSuccessRate(const PairState &current, const PairState &pr
         // If the file sizes are decreasing, then it could be that the throughput deterioration is due to
         // this. Thus, decreasing the number of actives will be a bad idea.
         if (round(log10(current.filesizeAvg)) < round(log10(previous.filesizeAvg))) {
-            decision = previousValue + increaseStepSize;
+            decision = previousValue + (increaseStepSize * current.weight);
             rationale << "Good link efficiency, throughput deterioration, avg. filesize decreasing";
         }
         // Compare on the logarithmic scale, to reduce sensitivity
         else if(round(log10(current.ema)) < round(log10(previous.ema))) {
-            decision = previousValue - decreaseStepSize;
+            decision = previousValue - (decreaseStepSize * current.weight);
             rationale << "Good link efficiency, throughput deterioration";
         }
         // We have lost an order of magnitude, so drop actives
@@ -250,12 +250,14 @@ static int optimizeGoodSuccessRate(const PairState &current, const PairState &pr
         }
     }
     else if (current.ema > previous.ema) {
-        decision = previousValue + increaseStepSize;
+        decision = previousValue + (increaseStepSize * current.weight);
         rationale << "Good link efficiency, current average throughput is larger than the preceding average";
     }
+    // consider getting rid of this increase -- if gradient is constant, maybe we want to decrease the max flow (stay constant for now)
     else {
-        decision = previousValue + increaseStepSize;
-        rationale << "Good link efficiency. Increment";
+        //decision = previousValue + (increaseStepSize * current.weight);
+        //rationale << "Good link efficiency. Increment";
+        decision = previousValue;
     }
 
     return decision;
@@ -507,7 +509,7 @@ int Optimizer::getFairShareDecision(const Pair &pair, float tputLimit, float tpu
         decision = previousDecision; //no information, keep constant
     }
     else if(target > previousDecision){
-        decision = previousDecision + increaseStepSize; // If the allocation of the fair share of throughput causes the decision to increase above the previous value, treat it as an optimizer increase
+        decision = previousDecision + (increaseStepSize * currentPairStateMap[pair].weight); // If the allocation of the fair share of throughput causes the decision to increase above the previous value, treat it as an optimizer increase
     }                                   // this is to promote fairness while also making sure we don't inadvertently cause an increase in connections since the scheduler can theoretically start connections faster than it can stop them
     else {
         // Overshoot policy: if decreasing the optimizer decision, we want to overshoot the decrease so that the average 
