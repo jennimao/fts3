@@ -66,6 +66,7 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "getNetLinkStates" << commit;
     dataSource->getNetLinkStates(&currentNetLinkStateMap); 
 
+    int index = 1; 
     for (auto i = pairs.begin(); i != pairs.end(); ++i) {
         // ===============================================        
         // STEP 1: DERIVING PAIR STATE
@@ -84,9 +85,11 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
         current.successRate = dataSource->getSuccessRateForPair(pair, timeFrame, &current.retryCount);
         current.queueSize = dataSource->getSubmitted(pair);
         
-        // Make pair weight the index of the pair 
-        int index = std::distance(pairs.begin(), i);
-        current.weight = index+1;
+        // Set pair weight if user specified, otherwise set to the index of the pair (to add some variation)
+        current.weight = dataSource->getPairWeight(pair);
+        current.weight = (current.weight != -1) ? current.weight : index;
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Pair weight for " << pair << ": " << current.weight << commit;
+        index++; 
 
         // Compute the links associated with the source-destination pair 
         current.netLinks = dataSource->getNetLinks(pair); 
@@ -129,7 +132,7 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
                     currentNetLinkStateMap[netLink].throughput += current.throughput; 
                     currentNetLinkStateMap[netLink].numPairs += 1;
             }
-        }         
+        } 
     }
 
     //get values of config paramenters
@@ -743,8 +746,8 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
 
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
         << "S&J: Optimizer Decision Info: Pair: " << pair \
-        << ", Pair Weight: " << current.weight \ 
-        << ", Previous Decision: " << current.optimizerDecision \ 
+        << ", Pair Weight: " << current.weight \
+        << ", Previous Decision: " << current.optimizerDecision \
         << ", Final Decision: " << decision \
         << ", Running: " << current.activeCount \
         << ", Avg active connections: " << current.avgActiveConnections \

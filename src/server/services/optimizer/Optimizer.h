@@ -195,6 +195,9 @@ public:
     // Get configured storage and pair limits
     virtual void getPairLimits(const Pair &pair, Range *range) = 0;
 
+    // Get configured pair weight
+    virtual int getPairWeight(const Pair &pair) = 0;
+
     // Get the stored optimizer value (current value)
     virtual int getOptimizerValue(const Pair&) = 0;
 

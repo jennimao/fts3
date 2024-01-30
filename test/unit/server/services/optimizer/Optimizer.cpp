@@ -241,6 +241,10 @@ public:
         range->min = range->max = 0;
     }
 
+    int getPairWeight(const Pair&) {
+        return 1;
+    }
+
     int getOptimizerValue(const Pair &pair) {
         auto i = registry.find(pair);
         if (i == registry.end() || i->second.empty()) {

@@ -526,12 +526,13 @@ CREATE TABLE `t_link_config` (
   `nostreams` int DEFAULT NULL,
   `no_delegation` varchar(3) DEFAULT NULL,
   `3rd_party_turl` varchar(150) DEFAULT NULL,
+  `link_weight` int DEFAULT NULL, 
   PRIMARY KEY (`source_se`,`dest_se`),
   UNIQUE KEY `symbolic_name` (`symbolic_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
-INSERT INTO t_link_config (source_se, dest_se, symbolic_name, min_active, max_active, optimizer_mode, nostreams, no_delegation)
+INSERT INTO t_link_config (source_se, dest_se, symbolic_name, min_active, max_active, optimizer_mode, nostreams, no_delegation, link_weight)
 VALUES ('*', '*', '*', 2, 130, 2, 0, 'off');
 
 --

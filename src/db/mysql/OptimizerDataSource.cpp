@@ -292,6 +292,23 @@ public:
         }
     }
 
+
+    // Get operator specified weight for the pair 
+    int getPairWeight(const Pair &pair) {
+        soci::indicator isNull;
+        int weight;
+
+        sql <<
+            "SELECT link_weight FROM t_link_config WHERE source_se = :source and dest_se = :dest",
+            soci::use(pair.source, "source"), soci::use(pair.destination, "dest"),
+            soci::into(weight, isNull);
+        
+        if (isNull == soci::i_null) {
+            weight = -1;
+        }
+        return weight;
+    }
+
     int getOptimizerValue(const Pair &pair) {
         soci::indicator isCurrentNull;
         int currentActive = 0;
