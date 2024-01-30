@@ -83,6 +83,10 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
         current.activeCount = dataSource->getActive(pair);
         current.successRate = dataSource->getSuccessRateForPair(pair, timeFrame, &current.retryCount);
         current.queueSize = dataSource->getSubmitted(pair);
+        
+        // Make pair weight the index of the pair 
+        int index = std::distance(pairs.begin(), i);
+        current.weight = index+1;
 
         // Compute the links associated with the source-destination pair 
         current.netLinks = dataSource->getNetLinks(pair); 
@@ -739,6 +743,8 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
 
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
         << "S&J: Optimizer Decision Info: Pair: " << pair \
+        << ", Pair Weight: " << current.weight \ 
+        << ", Previous Decision: " << current.optimizerDecision \ 
         << ", Final Decision: " << decision \
         << ", Running: " << current.activeCount \
         << ", Avg active connections: " << current.avgActiveConnections \
