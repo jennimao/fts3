@@ -118,6 +118,7 @@ struct StorageState {
     double avgActiveSlots;
     int activeSlots;
     double successRate;
+    double ema;
 
 
     //The following two variables store instantaneous inbound (asDest) and outbound (asSource) throughput for a given Storage element.
@@ -148,7 +149,7 @@ struct StorageState {
 
     StorageState(): instThroughput(0), avgThroughput(0),
                     numPairs(0), maxThroughput(0), maxActive(0), 
-                    avgActiveSlots(0), activeSlots(0), successRate(0) {}
+                    avgActiveSlots(0), activeSlots(0), successRate(0), ema(0) {}
     
                     /*
                     asSourceThroughputInst(0), asDestThroughputInst(0),
@@ -161,7 +162,7 @@ struct StorageState {
     StorageState(int maxA, double maxTput): 
                     instThroughput(0), avgThroughput(0),
                     numPairs(0), maxThroughput(maxTput), maxActive(maxA), 
-                    avgActiveSlots(0), activeSlots(0), successRate(0) {}
+                    avgActiveSlots(0), activeSlots(0), successRate(0), ema(0) {}
 
                 /*
                 asSourceThroughputInst(0),asDestThroughputInst(0),

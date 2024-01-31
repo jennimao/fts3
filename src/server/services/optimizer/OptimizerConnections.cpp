@@ -813,6 +813,10 @@ void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const 
             if (currentPair.proposedDecision == currentPair.optimizerDecision) {
                 currentPair.proposedDecision = currentPair.optimizerDecision + proposedIncrease;
             }
+            else if (currentPair.proposedDecision > currentPair.optimizerDecision && currentPair.optimizerDecision + proposedIncrease > currentPair.proposedDecision )
+            {
+                currentPair.proposedDecision = currentPair.optimizerDecision + proposedIncrease;
+            }
         }
     }
 }
@@ -849,12 +853,16 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
 
     // multiplicative decrease factor
     double beta = 0.8;
+    //alpha val for calculating ema
+    double ourEmaAlpha = 0.2; //feel free to change just did what Chatgpt said
 
     for (auto currentResource = currentSEStateMap.begin(); currentResource != currentSEStateMap.end(); ++currentResource) {
 
         for(int resourceIndex = 0; resourceIndex < 2; resourceIndex++){ //for source and dest indexes
             const std::string &se = currentResource->first;
             StorageState &current = currentResource->second[resourceIndex];
+
+            current.ema = exponentialMovingAverage(current.avgThroughput, ourEmaAlpha, current.ema);
 
             ////////////////////////////////////////////////////////////////////////////////////
             // Throughput limits exceeded or success rate is low --> multiplicative decrease
@@ -886,8 +894,8 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                     // if there is valid previous information
                     if(previous.avgThroughput != 0 && previous.avgActiveSlots != 0)
                     {
-                        int deltaTput = (current.avgThroughput - previous.avgThroughput);
-                        int deltaSlots = (current.avgActiveSlots - previous.avgActiveSlots);
+                        int deltaTput = round(log10(current.ema)) - round(log10(previous.ema)); //CHANGED TO ema
+                        int deltaSlots = current.avgActiveSlots - previous.avgActiveSlots;
 
                         if(deltaSlots != 0) {
                             gradient = deltaTput/deltaSlots;
