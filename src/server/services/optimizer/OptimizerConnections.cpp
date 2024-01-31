@@ -843,10 +843,10 @@ void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::
 // find the gradient for all active resources 
 void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
 {
-    std::stringstream rationale;
-
     // Start ticking!
     boost::timer::cpu_timer timer;
+    std::stringstream rationale;
+
     // multiplicative decrease factor
     double beta = 0.8;
 
@@ -938,10 +938,16 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
             }
         }
     }
+}
 
 
-    // TODO: add a function that calls set optimizer decison on each pair, with the decision being pairState.proposedDecision 
-   
+// TODO: add a function that calls set optimizer decison on each pair, with the decision being pairState.proposedDecision 
+void Optimizer::setDecisionforPairs(const std::list<Pair> &pairs) {
+    for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
+        PairState &pairState = currentPairStateMap[*pair];
+        // need to add rationale and cput timer into pairState?
+        setOptimizerDecision(*pair, pairState.proposedDecision, pairState, pairState.optimizerDecision - pairState.proposedDecision);
+    }
 }
 }
 }

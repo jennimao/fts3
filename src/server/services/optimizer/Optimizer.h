@@ -345,19 +345,12 @@ protected:
         int diff, const std::string &rationale, boost::timer::cpu_times elapsed);
 
 
-
     //NEW METHOD
-    void runOptimizerForResources(const std::list<Pair> &pairs);
-
     //run optimizer on resources, calc gradient and prop decisions
-    virtual void runOptimizerForResources(const std::list<Pair> &pairs) = 0;
-
-    virtual void proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se) = 0;
-    virtual void proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se) = 0; 
-
-
-
-
+    void runOptimizerForResources(const std::list<Pair> &pairs);
+    void proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se);
+    void proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se);
+    void setDecisionforPairs(const std::list<Pair> &pairs); 
 
     // Gets and saves current performance on all pairs and storage elements 
     // in currentPairStateMap and currentSEStateMap
