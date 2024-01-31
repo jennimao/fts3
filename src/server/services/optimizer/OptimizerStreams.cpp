@@ -29,7 +29,6 @@ using namespace fts3::common;
 namespace fts3 {
 namespace optimizer {
 
-
 // This part of the algorithm will check how to split the number of connections
 // between the number of available transfers.
 // Basically, divide the number of connections between the number of queued+active
