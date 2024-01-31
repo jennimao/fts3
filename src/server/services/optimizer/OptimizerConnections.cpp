@@ -938,15 +938,14 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
             }
         }
     }
-}
 
-
-// TODO: add a function that calls set optimizer decison on each pair, with the decision being pairState.proposedDecision 
-void Optimizer::setDecisionforPairs(const std::list<Pair> &pairs) {
+    // set the optimizer decision for pairs 
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         PairState &pairState = currentPairStateMap[*pair];
-        // need to add rationale and cput timer into pairState?
-        setOptimizerDecision(*pair, pairState.proposedDecision, pairState, pairState.optimizerDecision - pairState.proposedDecision);
+        // need to add the rationale for each pair 
+        setOptimizerDecision(*pair, pairState.proposedDecision, pairState, 
+                            pairState.optimizerDecision - pairState.proposedDecision,
+                            rationale.str(), timer.elapsed());
     }
 }
 }
