@@ -37,7 +37,7 @@ Optimizer::Optimizer(OptimizerDataSource *ds, OptimizerCallbacks *callbacks):
     optimizerSteadyInterval(boost::posix_time::seconds(60)), maxNumberOfStreams(10),
     maxSuccessRate(100), lowSuccessRate(97), baseSuccessRate(96),
     decreaseStepSize(1), increaseStepSize(1), increaseAggressiveStepSize(2),
-    emaAlpha(EMA_ALPHA)
+    emaAlpha(EMA_ALPHA), sourceIndex(0), destinationIndex(1)
 {
 }
 
@@ -90,6 +90,18 @@ void Optimizer::setEmaAlpha(double alpha)
 {
     emaAlpha = alpha;
 }
+
+
+void Optimizer::setSourceIndex(int sourceIndex)
+{
+    sourceIndex = sourceIndex;
+}
+
+void Optimizer::setDestinationIndex(int destinationIndex)
+{
+    destinationIndex = destinationIndex;
+}
+
 
 
 void Optimizer::run(void)

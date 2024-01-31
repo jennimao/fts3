@@ -459,6 +459,16 @@ po::options_description ServerConfigReader::_defineConfigOptions()
         "Decrease step size when the optimizer considers the performance is bad"
     )
     (
+        "OptimizerSourceIndex",
+        po::value<int>()->default_value(0),
+        "Source index on SEState"
+    )
+    (
+        "OptimizerDestinationIndex",
+        po::value<int>()->default_value(1),
+        "Destination index on SEState"
+    )
+    (
         "SigKillDelay",
         po::value<std::string>( &(_vars["SigKillDelay"]) )->default_value("500"),
         "In milliseconds, delay between graceful SIGTERM and SIGKILL"

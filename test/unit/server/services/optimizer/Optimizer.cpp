@@ -129,11 +129,14 @@ public:
     // Gets the storage states from the getStorage limit function 
     // Gets Instant throughput from the getThroughputAsSourceInst and getThroughputAsDestinationInst
     // Returns: A map from SE name (string) --> StorageState (both limits and actual throughput values).
-    void getStorageStates(std::map<std::string, StorageState> *result) {
-        StorageState SEState;
+    void getStorageStates(std::map<std::string, std::vector<StorageState>> *result) {
+        std::vector<StorageState> SEStates;
         StorageLimits limits;
         const Pair pair = getActivePairs().front(); //there is only every 1 pair in the unit tests
         std::string se;
+
+        StorageState& source = SEStates[0]; 
+        StorageState& dest = SEStates[1]; 
         
         //There is only ever one pair in the unit tests, so the only two elements in the currentSEStateMap are
         //the source and destination of the given pair
@@ -141,40 +144,23 @@ public:
         //Creating the SE state for the source
         se = pair.source;
         getStorageLimits(pair, &limits);
-        SEState.outboundMaxActive = limits.source;
-        SEState.outboundMaxThroughput = limits.throughputSource;
-        SEState.inboundMaxActive = limits.source;
-        SEState.inboundMaxThroughput = limits.source;
-
-        // Queries test environment to get current instantaneous throughput value.
-        if(SEState.outboundMaxThroughput > 0) {
-            SEState.asSourceThroughputInst = getThroughputAsSourceInst(se);
-        }
-        if(SEState.inboundMaxThroughput > 0) { 
-            SEState.asDestThroughputInst = getThroughputAsDestinationInst(se);                
-        }
-
-        //Stores SEState the map
-        (*result)[se] = SEState;
+        source.maxActive = limits.source;
+        source.maxThroughput = limits.throughputSource;
         
-        //Creating the SE state for the destination
-        se = pair.destination;
-        SEState.outboundMaxActive = limits.destination;
-        SEState.outboundMaxThroughput = limits.throughputDestination;
-        SEState.inboundMaxActive = limits.destination;
-        SEState.inboundMaxThroughput = limits.throughputDestination;
+        dest.maxActive = limits.destination;
+        dest.maxThroughput = limits.throughputDestination;
 
         // Queries test environment to get current instantaneous throughput value.
-        if(SEState.outboundMaxThroughput > 0) {
-            SEState.asSourceThroughputInst = getThroughputAsSourceInst(se);
+        if(source.maxThroughput > 0) {
+            source.instThroughput = getThroughputAsSourceInst(se);
         }
-        if(SEState.inboundMaxThroughput > 0) { 
-            SEState.asDestThroughputInst = getThroughputAsDestinationInst(se);                
+        if(dest.maxThroughput > 0) { 
+            dest.instThroughput = getThroughputAsDestinationInst(se);                
         }
 
         //Stores SEState the map
-        (*result)[se] = SEState;
-
+        (*result)[se] = SEStates;
+        
         return;
     }   
 

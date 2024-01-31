@@ -71,7 +71,7 @@ static void updateOptimizerEvolution(soci::session &sql,
             soci::use(pair.source), soci::use(pair.destination),
             soci::use(newState.ema), soci::use(active), soci::use(newState.throughput), soci::use(newState.successRate),
             soci::use(newState.filesizeAvg), soci::use(newState.filesizeStdDev),
-            soci::use(newState.activeCount), soci::use(newState.queueSize),
+            soci::use(newState.activeSlots), soci::use(newState.queueSize),
             soci::use(rationale), soci::use(diff);
         sql.commit();
     
@@ -136,7 +136,7 @@ public:
     //   - inbound and outbound maximum number of connections from every SE.
     // Additionally, the instantaneous throughput is also computed. 
     // Returns: A map from SE name (string) --> StorageState (both limits and actual throughput values).
-    void getStorageStates(std::map<std::string, StorageState> *result) {
+    void getStorageStates(std::map<std::string, std::vector<StorageState>> *result) {
 
         // First read in global default values:
         int outActiveGlobal = 0, inActiveGlobal = 0;
@@ -151,7 +151,12 @@ public:
             soci::into(inActiveGlobal, nullInActive), soci::into(inTputGlobal, nullInTput),
             soci::into(outActiveGlobal, nullOutActive), soci::into(outTputGlobal, nullOutTput);
 
-        (*result)["*"] = StorageState(inActiveGlobal, inTputGlobal, outActiveGlobal, outTputGlobal);
+        std::vector<StorageState> globalSEStates = {
+            StorageState(outActiveGlobal, outTputGlobal),
+            StorageState(inActiveGlobal, inTputGlobal) 
+        };
+        
+        (*result)["*"] = globalSEStates; 
 
         // We then fill in the table for every SE
         soci::rowset<soci::row> rs = (sql.prepare <<
@@ -164,51 +169,54 @@ public:
         for (auto i = rs.begin(); i != rs.end(); ++i) { //For each row in the table, load all values into an SEState object and store in the map "result"
             std::string se = i->get<std::string>("storage"); //indexed with the name of the storage element
 
-            StorageState SEState;
+            std::vector<StorageState> SEStates(2); 
 
-            SEState.outboundMaxActive = i->get<int>("outbound_max_active", ind);
+            StorageState &sourceState = SEStates[0]; 
+            StorageState &destState = SEStates[0]; 
+
+            sourceState.maxActive = i->get<int>("outbound_max_active", ind); 
             if (ind == soci::i_null) {
-                SEState.outboundMaxActive = 0;
+                sourceState.maxActive = 0; 
                 if (nullOutActive != soci::i_null) {
-                    SEState.outboundMaxActive = outActiveGlobal;
+                    sourceState.maxActive = outActiveGlobal;
                 }
             }
 
-            SEState.outboundMaxThroughput = i->get<double>("outbound_max_throughput", ind);
+            sourceState.maxThroughput= i->get<double>("outbound_max_throughput", ind); 
             if (ind == soci::i_null) {
-                SEState.outboundMaxThroughput = 0;
+                sourceState.maxThroughput = 0; 
                 if (nullOutTput != soci::i_null) {
-                    SEState.outboundMaxThroughput = outTputGlobal;
+                    sourceState.maxThroughput = outTputGlobal;
                 }
             }
 
-            SEState.inboundMaxActive = i->get<int>("inbound_max_active");
+            destState.maxActive = i->get<int>("inbound_max_active", ind);
             if (ind == soci::i_null) {
-                SEState.inboundMaxActive = 0;
+                destState.maxActive = 0;
                 if (nullInActive != soci::i_null) {
-                    SEState.inboundMaxActive = inActiveGlobal;
+                    destState.maxActive = inActiveGlobal;
                 }
             }
 
-            SEState.inboundMaxThroughput = i->get<double>("inbound_max_throughput");
+            destState.maxThroughput = i->get<double>("inbound_max_throughput", ind);
             if (ind == soci::i_null) {
-                SEState.inboundMaxThroughput = 0;
+                destState.maxThroughput = 0;
                 if (nullInTput != soci::i_null) {
-                    SEState.inboundMaxThroughput = inTputGlobal;
+                    destState.maxThroughput = inTputGlobal;
                 }
             }            
 
             // Queries database to get current instantaneous throughput value.
-            if (SEState.outboundMaxThroughput > 0) {
-                SEState.asSourceThroughputInst = getThroughputAsSourceInst(se);
+            if (sourceState.maxThroughput > 0) {
+                sourceState.instThroughput = getThroughputAsSourceInst(se);
             }
-            if (SEState.inboundMaxThroughput > 0) { 
-                SEState.asDestThroughputInst = getThroughputAsDestinationInst(se);                
+            if (destState.maxThroughput > 0) { 
+                destState.instThroughput = getThroughputAsDestinationInst(se);                
             }
 
-            (*result)[se] = SEState;
+            (*result)[se] = SEStates;
             FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "inbound max throughput for " << se 
-                                             << ": " << SEState.inboundMaxThroughput << commit;
+                                             << ": " << SEStates[0].maxThroughput << commit;
         }
     }    
 

@@ -64,7 +64,7 @@ public:
         msg.avgDuration = current.avgDuration;
         msg.successRate = current.successRate;
         msg.retryCount = current.retryCount;
-        msg.activeCount = current.activeCount;
+        msg.activeCount = current.activeSlots;
         msg.queueSize = current.queueSize;
         msg.ema = current.ema;
         msg.filesizeAvg = current.filesizeAvg;
@@ -98,6 +98,9 @@ void OptimizerService::runService()
     auto increaseAggressiveStep = config::ServerConfig::instance().get<int>("OptimizerAggressiveIncreaseStep");
     auto decreaseStep = config::ServerConfig::instance().get<int>("OptimizerDecreaseStep");
 
+    auto sourceIndex = config::ServerConfig::instance().get<int>("OptimizerDestinationIndex");
+    auto destinationIndex = config::ServerConfig::instance().get<int>("OptimizerDestinationIndex");
+
     OptimizerNotifier optimizerCallbacks(
         config::ServerConfig::instance().get<bool>("MonitoringMessaging"),
         config::ServerConfig::instance().get<std::string>("MessagingDirectory")
@@ -107,6 +110,7 @@ void OptimizerService::runService()
         db::DBSingleton::instance().getDBObjectInstance()->getOptimizerDataSource(),
         &optimizerCallbacks
     );
+
     optimizer.setSteadyInterval(optimizerSteadyInterval);
     optimizer.setMaxNumberOfStreams(maxNumberOfStreams);
     optimizer.setMaxSuccessRate(maxSuccessRate);
@@ -114,6 +118,8 @@ void OptimizerService::runService()
     optimizer.setBaseSuccessRate(baseSuccessRate);
     optimizer.setEmaAlpha(emaAlpha);
     optimizer.setStepSize(increaseStep, increaseAggressiveStep, decreaseStep);
+    optimizer.setSourceIndex(sourceIndex);
+    optimizer.setDestinationIndex(destinationIndex);
 
     while (!boost::this_thread::interruption_requested()) {
         try {

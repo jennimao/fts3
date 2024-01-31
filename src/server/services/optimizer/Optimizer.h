@@ -71,17 +71,21 @@ struct PairState {
     time_t avgDuration;
     double successRate;
     int retryCount;
-    int activeCount;
-    // Average number of concurrent connections in the past time interval 
-    // Note: This is based off of the average file count (activeCount) 
-    // it is only accurate if there are no streams (one connection = one file)
-    float avgActiveConnections; 
+
+    // Actual number of concurrent slots at the time that the optimizer accesses the database 
+    int activeSlots;
+
+    // Average number of concurrent connections (slots) in the past time interval 
+    // Note: This is based off of the average file count (activeSlots) 
+    // it is only accurate if there are no streams (one slot = one file)
+    float avgActiveSlots; 
+
     int queueSize;
     // Exponential Moving Average
     double ema;
     // Filesize statistics
     double filesizeAvg, filesizeStdDev;
-    // Optimizer last decision
+    // Optimizer decision
     int optimizerDecision;
     // Links in src-dest pair 
     std::list<std::string> netLinks; 
@@ -89,22 +93,34 @@ struct PairState {
     // User specified pair weight 
     int weight;
     
-    PairState(): timestamp(0), throughput(0), avgDuration(0), successRate(0), retryCount(0), activeCount(0),
+    PairState(): timestamp(0), throughput(0), avgDuration(0), successRate(0), retryCount(0), activeSlots(0), avgActiveSlots(0), 
                  queueSize(0), ema(0), filesizeAvg(0), filesizeStdDev(0), optimizerDecision(1), netLinks(0), weight(1) {}
 
     PairState(time_t ts, double thr, time_t ad, double sr, int rc, int ac, int qs, double ema, int conn):
         timestamp(ts), throughput(thr), avgDuration(ad), successRate(sr), retryCount(rc),
-        activeCount(ac), queueSize(qs), ema(ema), filesizeAvg(0), filesizeStdDev(0), optimizerDecision(conn),
+        activeSlots(ac), queueSize(qs), ema(ema), avgActiveSlots(0), filesizeAvg(0), filesizeStdDev(0), optimizerDecision(conn),
         netLinks(0), weight(1) {}
 };
 
 
 struct StorageState {
 
+    double instThroughput; 
+    double avgThroughput; 
+    int numPairs; 
+    double maxThroughput;
+    int maxActive;
+
+    // added metrics 
+    double avgActiveSlots;
+    int activeSlots;
+    double successRate;
+
+
     //The following two variables store instantaneous inbound (asDest) and outbound (asSource) throughput for a given Storage element.
     //The "Inst" throughput values are calculated by the getThroughputAsSourceInst and getThroughputAsDestinationInst methods (in OptimizerDataSource.cpp)
     //The "Inst" values store throughput based on the number of active transfers at the time the "Inst" methods are called 
-    double asSourceThroughputInst;
+    /*double asSourceThroughputInst;
     double asDestThroughputInst;
 
     //The following two variables store the window based inbound (asDest) and outbound (asSource) throughput for a given Storage element.
@@ -125,20 +141,32 @@ struct StorageState {
     int inboundMaxActive;
     int outboundMaxActive;
     double inboundMaxThroughput;
-    double outboundMaxThroughput;
+    double outboundMaxThroughput;*/
 
-    StorageState(): asSourceThroughputInst(0), asDestThroughputInst(0),
+    StorageState(): instThroughput(0), avgThroughput(0),
+                    numPairs(0), maxThroughput(0), maxActive(0), 
+                    avgActiveSlots(0), activeSlots(0), successRate(0) {}
+    
+                    /*
+                    asSourceThroughputInst(0), asDestThroughputInst(0),
                     asSourceThroughput(0), asDestThroughput(0), 
                     asSourceNumPairs(0), asDestNumPairs(0), 
                     inboundMaxActive(0), outboundMaxActive(0),
                     inboundMaxThroughput(0),outboundMaxThroughput(0) {}
+                    */
 
-    StorageState(int ia, double it, int oa, double ot):
+    StorageState(int maxA, double maxTput): 
+                    instThroughput(0), avgThroughput(0),
+                    numPairs(0), maxThroughput(maxTput), maxActive(maxA), 
+                    avgActiveSlots(0), activeSlots(0), successRate(0) {}
+
+                /*
                 asSourceThroughputInst(0),asDestThroughputInst(0),
                 asSourceThroughput(0), asDestThroughput(0),
                 asSourceNumPairs(0), asDestNumPairs(0), 
                 inboundMaxActive(ia), outboundMaxActive(oa),
                 inboundMaxThroughput(it), outboundMaxThroughput(ot) {}
+                */
 };	
 
 
@@ -184,7 +212,7 @@ public:
     virtual std::list<Pair> getActivePairs(void) = 0;
 
     // Get active throughput and connection limits for every SE  
-    virtual void getStorageStates(std::map<std::string, StorageState> *currentSEStateMap) = 0;
+    virtual void getStorageStates(std::map<std::string, std::vector<StorageState>> *currentSEStateMap) = 0;
 
     // Get active throughput and connection limits for every link  
     virtual void getNetLinkStates(std::map<std::string, NetLinkState> *currentLinkStateMap) = 0;
@@ -262,7 +290,7 @@ class Optimizer: public boost::noncopyable {
 protected:
     std::map<Pair, PairState> previousPairStateMap;
     std::map<Pair, PairState> currentPairStateMap;
-    std::map<std::string, StorageState> currentSEStateMap;
+    std::map<std::string, std::vector<StorageState>> currentSEStateMap;
     std::map<std::string, NetLinkState> currentNetLinkStateMap; 
 
     OptimizerDataSource *dataSource;
@@ -280,6 +308,9 @@ protected:
     bool windowBasedThroughputLimitEnforcement;
     bool netLinkThroughputLimitEnforcement;
     bool proportionalDecreaseThroughputLimitEnforcement;
+
+    int sourceIndex;
+    int destinationIndex;
 
     // Read currentSEStateMap values into a StorageLimits object for the purposes of a single pair.
     void getStorageLimits(const Pair &pair, StorageLimits *limits);
@@ -312,6 +343,8 @@ protected:
     // in currentPairStateMap and currentSEStateMap
     int getAvgActiveConnections(const Pair &pair);
 
+    void updateSEState(std::map<std::string, std::vector<StorageState>> &currentSEStateMap, std::string SE, int index, PairState &pair);
+
     // Gets and saves current performance on all pairs and storage elements 
     // in currentPairStateMap and currentSEStateMap
     void getCurrentIntervalInputState(const std::list<Pair> &);
@@ -330,6 +363,8 @@ public:
     void setBaseSuccessRate(int);
     void setStepSize(int increase, int increaseAggressive, int decrease);
     void setEmaAlpha(double);
+    void setSourceIndex(int);
+    void setDestinationIndex(int);
     void updateDecisions(const std::list<Pair> &);
     void run(void);
     void runOptimizerForPair(const Pair&);
