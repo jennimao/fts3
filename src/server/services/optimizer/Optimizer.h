@@ -256,6 +256,9 @@ public:
 
     // Permanently register the number of streams per active
     virtual void storeOptimizerStreams(const Pair &pair, int streams) = 0;
+
+    //run optimizer on resources, calc gradient and prop decisions
+    virtual void runOptimizerForResources(const std::list<Pair> &pairs);
 };
 
 // Used by the optimizer to notify decisions
@@ -291,6 +294,7 @@ protected:
     std::map<Pair, PairState> previousPairStateMap;
     std::map<Pair, PairState> currentPairStateMap;
     std::map<std::string, std::vector<StorageState>> currentSEStateMap;
+    std::map<std::string, std::vector<StorageState>> previousSEStateMap;
     std::map<std::string, NetLinkState> currentNetLinkStateMap; 
 
     OptimizerDataSource *dataSource;
@@ -339,6 +343,10 @@ protected:
     void setOptimizerDecision(const Pair &pair, int decision, const PairState &current,
         int diff, const std::string &rationale, boost::timer::cpu_times elapsed);
 
+
+
+    //NEW METHOD
+    void runOptimizerForResources(const std::list<Pair> &pairs);
     // Gets and saves current performance on all pairs and storage elements 
     // in currentPairStateMap and currentSEStateMap
     int getAvgActiveConnections(const Pair &pair);
@@ -368,6 +376,7 @@ public:
     void updateDecisions(const std::list<Pair> &);
     void run(void);
     void runOptimizerForPair(const Pair&);
+    void proposeDecisions(const std::list<Pair> &pairs);
 };
 
 

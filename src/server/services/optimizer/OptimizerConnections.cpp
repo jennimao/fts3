@@ -74,6 +74,12 @@ void Optimizer::updateSEState(std::map<std::string, std::vector<StorageState>> &
 // memory stores in currentPairStateMap and currentSEStateMap
 // Input: List of active pairs, as well as SQL database data.
 void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
+    
+    //move previously computed resource states into previousStateMap
+    for (auto it = currentSEStateMap.begin(); it != currentSEStateMap.end(); ++it) {
+        previousSEStateMap[it->first] = it->second;
+    }
+    
     // Initializes currentSEStateMap with limit information from
     // t_se table in the SQL database.
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "getStorageStates" << commit;
@@ -112,6 +118,8 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
         // Compute throughput values and an estimate of the actual number of connections (since it can deviate from optimizer decision) (used in Step 2)      
         dataSource->getCurrentIntervalTransferInfo(pair, timeFrame, current.activeSlots,
           &(current.throughput), &(current.filesizeAvg), &(current.filesizeStdDev), &(current.avgActiveSlots));
+        
+        current.optimizerDecision = 0;
 
         // Save to map
         currentPairStateMap[pair] = current;
@@ -790,6 +798,96 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
         callbacks->notifyDecision(pair, decision, current, diff, rationale);
     }
 }
+
+void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
+{
+
+    double beta = 0.8;
+    for (auto currentResource = currentSEStateMap.begin(); currentResource != currentSEStateMap.end(); ++currentResource) {
+        for(int resourceIndex = 0; resourceIndex < 2; resourceIndex++) //for source and dest indexes
+        {
+            //if user is above tput limit, don't bother with gradient, just reduce
+            if(currentResource->second[resourceIndex].avgThroughput > currentResource->second[resourceIndex].maxThroughput || currentResource->second[resourceIndex].activeSlots > currentResource->second[resourceIndex].maxActive)
+            {
+                for(auto pair = pairs.begin(); pair != pairs.end(); ++pair)
+                {
+                    int proposedDecision = std::round(previousPairStateMap[*pair].optimizerDecision * beta);
+                    
+                    if (resourceIndex == sourceIndex)
+                    {
+                        if (pair->source == currentResource->first)
+                        {
+                            if(currentPairStateMap[*pair].optimizerDecision == 0 || currentPairStateMap[*pair].optimizerDecision > proposedDecision)
+                            {
+                                currentPairStateMap[*pair].optimizerDecision = proposedDecision;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (pair->destination == currentResource->first)
+                        {
+                            
+                            if(currentPairStateMap[*pair].optimizerDecision == 0 || currentPairStateMap[*pair].optimizerDecision > proposedDecision)
+                            {    
+                                currentPairStateMap[*pair].optimizerDecision = proposedDecision;
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                double gradient;
+                if(previousSEStateMap.find(currentResource->first) !=  previousSEStateMap.end())
+                {
+                    //if there is valid previous information
+                    if(previousSEStateMap[currentResource->first][resourceIndex].avgThroughput != 0 && previousSEStateMap[currentResource->first][resourceIndex].avgActiveSlots != 0)
+                    {
+                        int deltaTput = (currentResource->second[resourceIndex].avgThroughput - previousSEStateMap[currentResource->first][resourceIndex].avgThroughput);
+                        int deltaSlots = (currentResource->second[resourceIndex].avgActiveSlots - previousSEStateMap[currentResource->first][resourceIndex].avgActiveSlots);
+                        if(deltaSlots != 0)
+                        {
+                            gradient = deltaTput/deltaSlots;
+                        }
+                        else
+                        {
+                            gradient = deltaTput; //LOGIC CHECK
+                        }
+                        
+                    }
+                    else 
+                    {
+                        gradient = 0; //no info gradient is 0
+                    }
+                    
+                }
+                else
+                {
+                    //no previous info
+                    gradient = 0; ///IDK
+                }
+                
+                if (gradient > 0)
+                {
+                    //propose an increase by weight 
+                }
+                else
+                {
+                    //reduce max pair by one (loop through all pairs and save the max, propose a decrease on that pair)
+                }
+            }
+        }
+                
+                
+            
+            
+
+        }
+        
+        
+        
+    }
 
 }
 }

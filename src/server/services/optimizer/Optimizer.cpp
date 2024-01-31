@@ -119,6 +119,8 @@ void Optimizer::run(void)
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "Before getCurrentIntervalInpuState" << commit;
         Optimizer::getCurrentIntervalInputState(pairs);
 
+        Optimizer::proposeDecisions(pairs);
+
         // Part 2 of Optimizer: Using state to compute "decisions" for number of concurrent connections
         // on each pair.
         Optimizer::updateDecisions(pairs);
@@ -138,6 +140,11 @@ void Optimizer::updateDecisions(const std::list<Pair> &pairs) {
     for (auto i = pairs.begin(); i != pairs.end(); ++i) {
         runOptimizerForPair(*i);
     }
+}
+
+void Optimizer::proposeDecisions(const std::list<Pair> &pairs)
+{
+    runOptimizerForResources(pairs);
 }
 
 void Optimizer::runOptimizerForPair(const Pair &pair)
