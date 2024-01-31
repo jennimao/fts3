@@ -85,8 +85,11 @@ struct PairState {
     double ema;
     // Filesize statistics
     double filesizeAvg, filesizeStdDev;
-    // Optimizer decision
+    // Optimizer decision (for interval n)
     int optimizerDecision;
+    // Proposed optimizer decision (for interval n+1)
+    int proposedDecision; 
+
     // Links in src-dest pair 
     std::list<std::string> netLinks; 
 
@@ -94,12 +97,12 @@ struct PairState {
     int weight;
     
     PairState(): timestamp(0), throughput(0), avgDuration(0), successRate(0), retryCount(0), activeSlots(0), avgActiveSlots(0), 
-                 queueSize(0), ema(0), filesizeAvg(0), filesizeStdDev(0), optimizerDecision(1), netLinks(0), weight(1) {}
+                 queueSize(0), ema(0), filesizeAvg(0), filesizeStdDev(0), optimizerDecision(1), proposedDecision(1), netLinks(0), weight(1) {}
 
     PairState(time_t ts, double thr, time_t ad, double sr, int rc, int ac, int qs, double ema, int conn):
         timestamp(ts), throughput(thr), avgDuration(ad), successRate(sr), retryCount(rc),
-        activeSlots(ac), queueSize(qs), ema(ema), avgActiveSlots(0), filesizeAvg(0), filesizeStdDev(0), optimizerDecision(conn),
-        netLinks(0), weight(1) {}
+        activeSlots(ac), queueSize(qs), ema(ema), avgActiveSlots(0), filesizeAvg(0), filesizeStdDev(0), proposedDecision(1), 
+        optimizerDecision(conn), netLinks(0), weight(1) {}
 };
 
 
@@ -257,8 +260,6 @@ public:
     // Permanently register the number of streams per active
     virtual void storeOptimizerStreams(const Pair &pair, int streams) = 0;
 
-    //run optimizer on resources, calc gradient and prop decisions
-    virtual void runOptimizerForResources(const std::list<Pair> &pairs);
 };
 
 // Used by the optimizer to notify decisions
@@ -347,6 +348,17 @@ protected:
 
     //NEW METHOD
     void runOptimizerForResources(const std::list<Pair> &pairs);
+
+    //run optimizer on resources, calc gradient and prop decisions
+    virtual void runOptimizerForResources(const std::list<Pair> &pairs) = 0;
+
+    virtual void proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se) = 0;
+    virtual void proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se) = 0; 
+
+
+
+
+
     // Gets and saves current performance on all pairs and storage elements 
     // in currentPairStateMap and currentSEStateMap
     int getAvgActiveConnections(const Pair &pair);

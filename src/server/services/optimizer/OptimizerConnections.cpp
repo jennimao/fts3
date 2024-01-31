@@ -25,6 +25,7 @@
 #include "common/Exceptions.h"
 #include "common/Logger.h"
 #include "config/ServerConfig.h"
+#include <random> 
 
 using namespace fts3::common;
 
@@ -119,8 +120,6 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
         dataSource->getCurrentIntervalTransferInfo(pair, timeFrame, current.activeSlots,
           &(current.throughput), &(current.filesizeAvg), &(current.filesizeStdDev), &(current.avgActiveSlots));
         
-        current.optimizerDecision = 0;
-
         // Save to map
         currentPairStateMap[pair] = current;
         
@@ -791,6 +790,7 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
     //Stores current PairState (including the optimizer decision) in the previousPairStateMap
     previousPairStateMap[pair] = current;
     currentPairStateMap[pair].optimizerDecision = decision;
+    currentPairStateMap[pair].proposedDecision = decision; 
     
     dataSource->storeOptimizerDecision(pair, decision, current, diff, rationale);
 
@@ -799,68 +799,106 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
     }
 }
 
+
+
+
+void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se) {
+    for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
+        PairState &currentPair = currentPairStateMap[*pair];
+        int proposedIncrease = std::round(currentPair.weight * increaseStepSize); 
+    
+        // if the pair uses this resource 
+        if (pair->source == se || pair->destination == se) {
+            // if none of the other proposed decisions so far are a decrease 
+            if (currentPair.proposedDecision == currentPair.optimizerDecision) {
+                currentPair.proposedDecision = currentPair.optimizerDecision + proposedIncrease;
+            }
+        }
+    }
+}
+
+
+void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se) {
+
+    double maxAllocation = 0.0; 
+    PairState *maxPair; 
+
+    for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
+        if (pair->source == se || pair->destination == se) {
+            PairState &currentPair = currentPairStateMap[*pair];
+            double allocation = currentPair.throughput / currentPair.avgActiveSlots; 
+            
+            if (allocation >= maxAllocation) {
+                maxAllocation = allocation; 
+                maxPair = &currentPair; // save the current max allocated pair 
+            }
+        }
+    }
+
+    // decrease the max overallocated pair by one as long as a stricter decrease has not occurred 
+    maxPair->proposedDecision = std::min(maxPair->proposedDecision, maxPair->optimizerDecision - 1);
+}
+
+
+// find the gradient for all active resources 
 void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
 {
+    std::stringstream rationale;
 
+    // Start ticking!
+    boost::timer::cpu_timer timer;
+    // multiplicative decrease factor
     double beta = 0.8;
+
     for (auto currentResource = currentSEStateMap.begin(); currentResource != currentSEStateMap.end(); ++currentResource) {
-        for(int resourceIndex = 0; resourceIndex < 2; resourceIndex++) //for source and dest indexes
-        {
-            //if user is above tput limit, don't bother with gradient, just reduce
-            if(currentResource->second[resourceIndex].avgThroughput > currentResource->second[resourceIndex].maxThroughput || currentResource->second[resourceIndex].activeSlots > currentResource->second[resourceIndex].maxActive)
-            {
-                for(auto pair = pairs.begin(); pair != pairs.end(); ++pair)
-                {
-                    int proposedDecision = std::round(previousPairStateMap[*pair].optimizerDecision * beta);
-                    
-                    if (resourceIndex == sourceIndex)
-                    {
-                        if (pair->source == currentResource->first)
-                        {
-                            if(currentPairStateMap[*pair].optimizerDecision == 0 || currentPairStateMap[*pair].optimizerDecision > proposedDecision)
-                            {
-                                currentPairStateMap[*pair].optimizerDecision = proposedDecision;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if (pair->destination == currentResource->first)
-                        {
-                            
-                            if(currentPairStateMap[*pair].optimizerDecision == 0 || currentPairStateMap[*pair].optimizerDecision > proposedDecision)
-                            {    
-                                currentPairStateMap[*pair].optimizerDecision = proposedDecision;
-                            }
-                        }
+
+        for(int resourceIndex = 0; resourceIndex < 2; resourceIndex++){ //for source and dest indexes
+            const std::string &se = currentResource->first;
+            StorageState &current = currentResource->second[resourceIndex];
+
+            ////////////////////////////////////////////////////////////////////////////////////
+            // Throughput limits exceeded or success rate is low --> multiplicative decrease
+            ////////////////////////////////////////////////////////////////////////////////////
+            if(current.avgThroughput > current.maxThroughput || current.activeSlots > current.maxActive || current.successRate <= lowSuccessRate) { // are we getting rid of the active slots? 
+                for(auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
+
+                    PairState &currentPair = currentPairStateMap[*pair];
+                    int proposedDecision = std::round(currentPair.optimizerDecision * beta); // I think this should be current?
+
+                    if (pair->source == se || pair->destination == se) {
+                        rationale << "User limit reached or success rate is low --> multiplicative decrease";
+                        currentPair.proposedDecision = proposedDecision;
+                        //setOptimizerDecision(*pair, proposedDecision, currentPair, currentPair.optimizerDecision - proposedDecision, 
+                        //                    rationale.str(), timer.elapsed());
                     }
                 }
             }
-            else
-            {
+
+            //////////////////////////////////////////////////////////////
+            // Calculate gradient 
+            //////////////////////////////////////////////////////////////           
+            else {
                 double gradient;
-                if(previousSEStateMap.find(currentResource->first) !=  previousSEStateMap.end())
+                StorageState &previous = previousSEStateMap[se][resourceIndex];
+
+                if(previousSEStateMap.find(se) !=  previousSEStateMap.end())
                 {
-                    //if there is valid previous information
-                    if(previousSEStateMap[currentResource->first][resourceIndex].avgThroughput != 0 && previousSEStateMap[currentResource->first][resourceIndex].avgActiveSlots != 0)
+                    // if there is valid previous information
+                    if(previous.avgThroughput != 0 && previous.avgActiveSlots != 0)
                     {
-                        int deltaTput = (currentResource->second[resourceIndex].avgThroughput - previousSEStateMap[currentResource->first][resourceIndex].avgThroughput);
-                        int deltaSlots = (currentResource->second[resourceIndex].avgActiveSlots - previousSEStateMap[currentResource->first][resourceIndex].avgActiveSlots);
-                        if(deltaSlots != 0)
-                        {
+                        int deltaTput = (current.avgThroughput - previous.avgThroughput);
+                        int deltaSlots = (current.avgActiveSlots - previous.avgActiveSlots);
+
+                        if(deltaSlots != 0) {
                             gradient = deltaTput/deltaSlots;
                         }
-                        else
-                        {
-                            gradient = deltaTput; //LOGIC CHECK
+                        else {
+                            gradient = deltaTput; //LOGIC CHECK -- this in theory shouldn't happen but it's possible due to inertia
                         }
-                        
                     }
-                    else 
-                    {
+                    else {
                         gradient = 0; //no info gradient is 0
                     }
-                    
                 }
                 else
                 {
@@ -868,26 +906,42 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                     gradient = 0; ///IDK
                 }
                 
+                //////////////////////////////////////////////////////////////
+                // Propose changes to each pair based on resource gradient
+                //////////////////////////////////////////////////////////////    
                 if (gradient > 0)
                 {
-                    //propose an increase by weight 
+                    // propose an increase by weight because resource is underutilized 
+                    proposeWeightedPairIncrease(pairs, se); 
                 }
-                else
-                {
-                    //reduce max pair by one (loop through all pairs and save the max, propose a decrease on that pair)
+                else if (gradient == 0) {
+                    // 90%: reduce max pair by one (loop through all pairs and save the max, propose a decrease on that pair)
+                    // 10%: increase all pairs by weight 
+                    std::random_device rd;
+                    std::mt19937 gen(rd());
+                    std::uniform_real_distribution<double> distribution(0.0, 1.0);
+                    constexpr double decreaseProbability = 0.9;
+                    double random = distribution(gen);  
+
+                    if (random < decreaseProbability) {
+                        // 90% case 
+                        proposeDecreaseMaxPair(pairs, se);
+                    }
+                    else {
+                        // 10% case
+                        proposeWeightedPairIncrease(pairs, se);
+                    }
+                }
+                else {
+                    proposeDecreaseMaxPair(pairs, se);
                 }
             }
         }
-                
-                
-            
-            
-
-        }
-        
-        
-        
     }
 
+
+    // TODO: add a function that calls set optimizer decison on each pair, with the decision being pairState.proposedDecision 
+   
+}
 }
 }
