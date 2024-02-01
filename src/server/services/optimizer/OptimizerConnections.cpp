@@ -802,33 +802,35 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
 
 
 
-void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se) {
+void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se, const int resourceIndex) {
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         PairState &currentPair = currentPairStateMap[*pair];
         int proposedIncrease = std::round(currentPair.weight * increaseStepSize); 
     
         // if the pair uses this resource 
-        if (pair->source == se || pair->destination == se) {
+        if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
             // if none of the other proposed decisions so far are a decrease 
             if (currentPair.proposedDecision == currentPair.optimizerDecision) {
                 currentPair.proposedDecision = currentPair.optimizerDecision + proposedIncrease;
+                currentPair.rationale = "Resource" + se + "gradient increase";
             }
             else if (currentPair.proposedDecision > currentPair.optimizerDecision && currentPair.optimizerDecision + proposedIncrease > currentPair.proposedDecision )
             {
                 currentPair.proposedDecision = currentPair.optimizerDecision + proposedIncrease;
+                
             }
         }
     }
 }
 
 
-void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se) {
+void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se, const int resourceIndex) {
 
     double maxAllocation = 0.0; 
     PairState *maxPair; 
 
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
-        if (pair->source == se || pair->destination == se) {
+        if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
             PairState &currentPair = currentPairStateMap[*pair];
             double allocation = currentPair.throughput / currentPair.avgActiveSlots; 
             
@@ -841,6 +843,11 @@ void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::
 
     // decrease the max overallocated pair by one as long as a stricter decrease has not occurred 
     maxPair->proposedDecision = std::min(maxPair->proposedDecision, maxPair->optimizerDecision - 1);
+    if(maxPair->proposedDecision == maxPair->optimizerDecision - 1)
+    {
+        maxPair->rationale = "Decreased because max pair on" + se;
+    }
+   
 }
 
 
@@ -873,11 +880,12 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                     PairState &currentPair = currentPairStateMap[*pair];
                     int proposedDecision = std::round(currentPair.optimizerDecision * beta); // I think this should be current?
 
-                    if (pair->source == se || pair->destination == se) {
-                        rationale << "User limit reached or success rate is low --> multiplicative decrease";
-                        currentPair.proposedDecision = proposedDecision;
-                        //setOptimizerDecision(*pair, proposedDecision, currentPair, currentPair.optimizerDecision - proposedDecision, 
-                        //                    rationale.str(), timer.elapsed());
+                    if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
+                        if(proposedDecision < currentPair.proposedDecision)
+                        {
+                            currentPair.rationale = "User limit reached or success rate is low on" + se + ": --> multiplicative decrease";
+                            currentPair.proposedDecision = proposedDecision;
+                        }
                     }
                 }
             }
@@ -920,7 +928,7 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                 if (gradient > 0)
                 {
                     // propose an increase by weight because resource is underutilized 
-                    proposeWeightedPairIncrease(pairs, se); 
+                    proposeWeightedPairIncrease(pairs, se, resourceIndex); 
                 }
                 else if (gradient == 0) {
                     // 90%: reduce max pair by one (loop through all pairs and save the max, propose a decrease on that pair)
@@ -933,15 +941,15 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
 
                     if (random < decreaseProbability) {
                         // 90% case 
-                        proposeDecreaseMaxPair(pairs, se);
+                        proposeDecreaseMaxPair(pairs, se, resourceIndex);
                     }
                     else {
                         // 10% case
-                        proposeWeightedPairIncrease(pairs, se);
+                        proposeWeightedPairIncrease(pairs, se, resourceIndex);
                     }
                 }
                 else {
-                    proposeDecreaseMaxPair(pairs, se);
+                    proposeDecreaseMaxPair(pairs, se, resourceIndex);
                 }
             }
         }
@@ -953,7 +961,7 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
         // need to add the rationale for each pair 
         setOptimizerDecision(*pair, pairState.proposedDecision, pairState, 
                             pairState.optimizerDecision - pairState.proposedDecision,
-                            rationale.str(), timer.elapsed());
+                            pairState.rationale, timer.elapsed());
     }
 }
 }

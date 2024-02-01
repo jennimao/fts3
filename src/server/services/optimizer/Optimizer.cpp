@@ -123,7 +123,7 @@ void Optimizer::run(void)
 
         // Part 2 of Optimizer: Using state to compute "decisions" for number of concurrent connections
         // on each pair.
-        Optimizer::updateDecisions(pairs);
+        //Optimizer::updateDecisions(pairs);
     }
     catch (std::exception &e) {
         throw SystemError(std::string(__func__) + ": Caught exception " + e.what());

@@ -352,8 +352,8 @@ protected:
     //NEW METHOD
     //run optimizer on resources, calc gradient and prop decisions
     void runOptimizerForResources(const std::list<Pair> &pairs);
-    void proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se);
-    void proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se);
+    void proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se, const int resourceIndex);
+    void proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se, const int resourceIndex);
     void setDecisionforPairs(const std::list<Pair> &pairs, boost::timer::cpu_times elapsed); 
 
     // Gets and saves current performance on all pairs and storage elements 
