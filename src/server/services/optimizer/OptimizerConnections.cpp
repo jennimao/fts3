@@ -44,6 +44,7 @@ static inline double exponentialMovingAverage(double sample, double alpha, doubl
 
 static int stochasticRounding(double number) //From chatGPT
 {
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: stochastic rounding" << commit;
     std::random_device rd;
     // Mersenne Twister engine
     std::mt19937 gen(rd());
@@ -56,9 +57,11 @@ static int stochasticRounding(double number) //From chatGPT
     // Use random number to decide whether to round up or down
     if (dis(gen) < fractionalPart) {
         // Round up
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: stochastic rounding returned" << commit;
         return std::ceil(number);
     } else {
         // Round down
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: stochastic rounding returned" << commit;
         return std::floor(number);
     }
 
@@ -89,6 +92,10 @@ void Optimizer::updateSEState(std::map<std::string, std::vector<StorageState>> &
         seState.numPairs += 1;
         seState.activeSlots += pair.activeSlots; 
         seState.avgActiveSlots += pair.avgActiveSlots; 
+        if (std::isnan(seState.successRate))
+        {
+            seState.successRate = 0;
+        }
         seState.successRate += pair.successRate;
     }
 }
@@ -821,6 +828,7 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
 
 
 void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se, const int resourceIndex) {
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: ran proposeWeightedPairIncrease" << commit;
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         PairState &currentPair = currentPairStateMap[*pair];
         int proposedIncrease = std::max(1, stochasticRounding(currentPair.weight * increaseStepSize)); 
@@ -841,7 +849,7 @@ void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::
 
     double maxAllocation = 0.0; 
     PairState *maxPair; 
-
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: ran proposeWeightedPairDecrease" << commit;
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
             PairState &currentPair = currentPairStateMap[*pair];
@@ -894,14 +902,21 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                 FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current avg throughput " << current.avgThroughput << commit;
                 FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current max throughput " << current.maxThroughput << commit;
                 bool badSucessRate = false;
-                if(current.numPairs != 0)
+                
+                if(current.numPairs != 0 && !std::isnan(current.successRate))
                 {
+                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: line 899" << commit;
                     if((current.successRate / current.numPairs) <= lowSuccessRate) 
                     {
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: line 902" << commit;
                         badSucessRate = true;
                     }
                 }
-                if (current.avgThroughput > current.maxThroughput || badSucessRate) {
+                
+                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: line 906" << commit;
+                
+                if ((current.maxThroughput > 0 && current.avgThroughput > current.maxThroughput) || badSucessRate) {
+                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: bad sucess or tput" << commit;
                     for(auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
 
                         PairState &currentPair = currentPairStateMap[*pair];
@@ -914,22 +929,32 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                             FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Source (0) Dest (1) hit tput limit" << commit;
                         }
                     }
+                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: bad sucess or tput end" << commit;
                 }
 
                 //////////////////////////////////////////////////////////////
                 // Calculate gradient 
                 //////////////////////////////////////////////////////////////           
                 else {
+                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: CALC GRADIENT" << commit;
                     double gradient;
-                    StorageState &previous = previousSEStateMap[se][resourceIndex];
+                   
 
-                    if(previousSEStateMap.find(se) !=  previousSEStateMap.end())
+                    if(!previousSEStateMap.empty() && previousSEStateMap.find(se) !=  previousSEStateMap.end() && previousSEStateMap[se].size() > resourceIndex)
                     {
+                        StorageState &previous = previousSEStateMap[se][resourceIndex];
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: prev state exists for se:" << se << commit;
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: prev state object vector size:" << previousSEStateMap[se].size() << commit;
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: prev state object avg tput:" << previousSEStateMap[se][resourceIndex].avgThroughput << commit;
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: prev state object avg active slots:" << previousSEStateMap[se][resourceIndex].avgActiveSlots << commit;
                         // if there is valid previous information
                         if(previous.avgThroughput != 0 && previous.avgActiveSlots != 0)
                         {
+                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: valid prev info" << commit;
                             int deltaTput = round(log10(current.ema)) - round(log10(previous.ema)); //CHANGED TO ema
                             int deltaSlots = current.avgActiveSlots - previous.avgActiveSlots;
+                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: delta tput" << deltaTput << commit;
+                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: delta slots" << deltaSlots << commit;
 
                             if(deltaSlots != 0) {
                                 gradient = deltaTput/deltaSlots;
