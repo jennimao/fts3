@@ -878,109 +878,118 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
 
     for (auto currentResource = currentSEStateMap.begin(); currentResource != currentSEStateMap.end(); ++currentResource) {
         const std::string &se = currentResource->first;
+        if (se != "*")
+        {
+            for(int resourceIndex = 0; resourceIndex < 2; resourceIndex++){ //for source and dest indexes
+                
+                StorageState &current = currentResource->second[resourceIndex];
 
-        for(int resourceIndex = 0; resourceIndex < 2; resourceIndex++){ //for source and dest indexes
-            
-            StorageState &current = currentResource->second[resourceIndex];
+                current.ema = exponentialMovingAverage(current.avgThroughput, ourEmaAlpha, current.ema);
 
-            current.ema = exponentialMovingAverage(current.avgThroughput, ourEmaAlpha, current.ema);
+                ////////////////////////////////////////////////////////////////////////////////////
+                // Throughput limits exceeded or success rate is low --> multiplicative decrease
+                ////////////////////////////////////////////////////////////////////////////////////
 
-            ////////////////////////////////////////////////////////////////////////////////////
-            // Throughput limits exceeded or success rate is low --> multiplicative decrease
-            ////////////////////////////////////////////////////////////////////////////////////
-
-            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current success rate " << (current.successRate / current.numPairs) << commit;
-            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current avg throughput " << current.avgThroughput << commit;
-            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current max throughput " << current.maxThroughput << commit;
-
-            if(current.avgThroughput > current.maxThroughput || (current.successRate / current.numPairs) <= lowSuccessRate) {
-                for(auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
-
-                    PairState &currentPair = currentPairStateMap[*pair];
-                    int proposedDecision = stochasticRounding(currentPair.activeSlots * beta);
-
-                    if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
-                        currentPair.rationale = "User limit reached or success rate is low on" + se + ": --> multiplicative decrease";
-                        currentPair.proposedDecision = proposedDecision;
-
-                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Source (0) Dest (1) hit tput limit" << commit;
+                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current success rate " << (current.successRate / current.numPairs) << commit;
+                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current avg throughput " << current.avgThroughput << commit;
+                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current max throughput " << current.maxThroughput << commit;
+                bool badSucessRate = false;
+                if(current.numPairs != 0)
+                {
+                    if((current.successRate / current.numPairs) <= lowSuccessRate) 
+                    {
+                        badSucessRate = true;
                     }
                 }
-            }
+                if (current.avgThroughput > current.maxThroughput || badSucessRate) {
+                    for(auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
 
-            //////////////////////////////////////////////////////////////
-            // Calculate gradient 
-            //////////////////////////////////////////////////////////////           
-            else {
-                double gradient;
-                StorageState &previous = previousSEStateMap[se][resourceIndex];
+                        PairState &currentPair = currentPairStateMap[*pair];
+                        int proposedDecision = stochasticRounding(currentPair.activeSlots * beta);
 
-                if(previousSEStateMap.find(se) !=  previousSEStateMap.end())
-                {
-                    // if there is valid previous information
-                    if(previous.avgThroughput != 0 && previous.avgActiveSlots != 0)
+                        if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
+                            currentPair.rationale = "User limit reached or success rate is low on" + se + ": --> multiplicative decrease";
+                            currentPair.proposedDecision = proposedDecision;
+
+                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Source (0) Dest (1) hit tput limit" << commit;
+                        }
+                    }
+                }
+
+                //////////////////////////////////////////////////////////////
+                // Calculate gradient 
+                //////////////////////////////////////////////////////////////           
+                else {
+                    double gradient;
+                    StorageState &previous = previousSEStateMap[se][resourceIndex];
+
+                    if(previousSEStateMap.find(se) !=  previousSEStateMap.end())
                     {
-                        int deltaTput = round(log10(current.ema)) - round(log10(previous.ema)); //CHANGED TO ema
-                        int deltaSlots = current.avgActiveSlots - previous.avgActiveSlots;
+                        // if there is valid previous information
+                        if(previous.avgThroughput != 0 && previous.avgActiveSlots != 0)
+                        {
+                            int deltaTput = round(log10(current.ema)) - round(log10(previous.ema)); //CHANGED TO ema
+                            int deltaSlots = current.avgActiveSlots - previous.avgActiveSlots;
 
-                        if(deltaSlots != 0) {
-                            gradient = deltaTput/deltaSlots;
-                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient << commit;
+                            if(deltaSlots != 0) {
+                                gradient = deltaTput/deltaSlots;
+                                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient << commit;
+                            }
+                            else {
+                                gradient = deltaTput; //theoretically this shouldn't have that big of an impact. If slots don't change and tput increase, fine to increase, the reverse is also true
+                                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient  << "no slot change" << commit;
+                            }
                         }
                         else {
-                            gradient = deltaTput; //theoretically this shouldn't have that big of an impact. If slots don't change and tput increase, fine to increase, the reverse is also true
-                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient  << "no slot change" << commit;
+                            gradient = 1; //no info gradient is 1, probably starting off
+                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient  << "no previous info" << commit;
+                        }
+                    }
+                    else
+                    {
+                        //starting, probe up
+                        gradient = 1; 
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient  << "no previous info 2" << commit;
+                    }
+                    
+                    //////////////////////////////////////////////////////////////
+                    // Propose changes to each pair based on resource gradient
+                    //////////////////////////////////////////////////////////////    
+                    if (gradient > 0)
+                    {
+                        // propose an increase by weight because resource is underutilized 
+                        proposeWeightedPairIncrease(pairs, se, resourceIndex); 
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") increase" << commit;
+                    }
+                    else if (gradient == 0) {
+                        // 90%: reduce max pair by one (loop through all pairs and save the max, propose a decrease on that pair)
+                        // 10%: increase all pairs by weight 
+                        std::random_device rd;
+                        std::mt19937 gen(rd());
+                        std::uniform_real_distribution<double> distribution(0.0, 1.0);
+                        constexpr double decreaseProbability = 0.9;
+                        double random = distribution(gen);  
+
+                        if (random < decreaseProbability) {
+                            // 90% case 
+                            proposeDecreaseMaxPair(pairs, se, resourceIndex);
+                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") 90 percent case decrease" << commit;
+                        }
+                        else {
+                            // 10% case
+                            proposeWeightedPairIncrease(pairs, se, resourceIndex);
+                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") 10 percent case increase" << commit;
                         }
                     }
                     else {
-                        gradient = 1; //no info gradient is 1, probably starting off
-                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient  << "no previous info" << commit;
-                    }
-                }
-                else
-                {
-                    //starting, probe up
-                    gradient = 1; 
-                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient  << "no previous info 2" << commit;
-                }
-                
-                //////////////////////////////////////////////////////////////
-                // Propose changes to each pair based on resource gradient
-                //////////////////////////////////////////////////////////////    
-                if (gradient > 0)
-                {
-                    // propose an increase by weight because resource is underutilized 
-                    proposeWeightedPairIncrease(pairs, se, resourceIndex); 
-                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") increase" << commit;
-                }
-                else if (gradient == 0) {
-                    // 90%: reduce max pair by one (loop through all pairs and save the max, propose a decrease on that pair)
-                    // 10%: increase all pairs by weight 
-                    std::random_device rd;
-                    std::mt19937 gen(rd());
-                    std::uniform_real_distribution<double> distribution(0.0, 1.0);
-                    constexpr double decreaseProbability = 0.9;
-                    double random = distribution(gen);  
-
-                    if (random < decreaseProbability) {
-                        // 90% case 
                         proposeDecreaseMaxPair(pairs, se, resourceIndex);
-                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") 90 percent case decrease" << commit;
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") decrease" << commit;
                     }
-                    else {
-                        // 10% case
-                        proposeWeightedPairIncrease(pairs, se, resourceIndex);
-                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") 10 percent case increase" << commit;
-                    }
-                }
-                else {
-                    proposeDecreaseMaxPair(pairs, se, resourceIndex);
-                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") decrease" << commit;
                 }
             }
-        }
 
-        previousSEStateMap[se] = currentResource->second;
+            previousSEStateMap[se] = currentResource->second;
+        }
     }
 
     // set the optimizer decision for pairs 
