@@ -42,6 +42,28 @@ static inline double exponentialMovingAverage(double sample, double alpha, doubl
     return cur;
 }
 
+static int stochasticRounding(double number) //From chatGPT
+{
+    std::random_device rd;
+    // Mersenne Twister engine
+    std::mt19937 gen(rd());
+    // Uniform distribution between 0 and 1
+    std::uniform_real_distribution<> dis(0, 1);
+
+    // Get the fractional part of the number
+    double fractionalPart = std::abs(number - static_cast<int>(number));
+    
+    // Use random number to decide whether to round up or down
+    if (dis(gen) < fractionalPart) {
+        // Round up
+        return std::ceil(number);
+    } else {
+        // Round down
+        return std::floor(number);
+    }
+
+}
+
 
 static boost::posix_time::time_duration calculateTimeFrame(time_t avgDuration)
 {
@@ -801,7 +823,7 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
 void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se, const int resourceIndex) {
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         PairState &currentPair = currentPairStateMap[*pair];
-        int proposedIncrease = std::max(1.0, std::round(currentPair.weight * increaseStepSize)); 
+        int proposedIncrease = std::max(1, stochasticRounding(currentPair.weight * increaseStepSize)); 
     
         // if the pair uses this resource 
         if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
@@ -875,7 +897,7 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                 for(auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
 
                     PairState &currentPair = currentPairStateMap[*pair];
-                    int proposedDecision = std::round(currentPair.activeSlots * beta);
+                    int proposedDecision = stochasticRounding(currentPair.activeSlots * beta);
 
                     if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
                         currentPair.rationale = "User limit reached or success rate is low on" + se + ": --> multiplicative decrease";

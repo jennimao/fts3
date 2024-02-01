@@ -98,9 +98,6 @@ void OptimizerService::runService()
     auto increaseAggressiveStep = config::ServerConfig::instance().get<int>("OptimizerAggressiveIncreaseStep");
     auto decreaseStep = config::ServerConfig::instance().get<int>("OptimizerDecreaseStep");
 
-    auto sourceIndex = config::ServerConfig::instance().get<int>("OptimizerDestinationIndex");
-    auto destinationIndex = config::ServerConfig::instance().get<int>("OptimizerDestinationIndex");
-
     OptimizerNotifier optimizerCallbacks(
         config::ServerConfig::instance().get<bool>("MonitoringMessaging"),
         config::ServerConfig::instance().get<std::string>("MessagingDirectory")
@@ -118,8 +115,6 @@ void OptimizerService::runService()
     optimizer.setBaseSuccessRate(baseSuccessRate);
     optimizer.setEmaAlpha(emaAlpha);
     optimizer.setStepSize(increaseStep, increaseAggressiveStep, decreaseStep);
-    optimizer.setSourceIndex(sourceIndex);
-    optimizer.setDestinationIndex(destinationIndex);
 
     while (!boost::this_thread::interruption_requested()) {
         try {
