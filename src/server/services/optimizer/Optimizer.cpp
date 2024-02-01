@@ -107,6 +107,7 @@ void Optimizer::setDestinationIndex(int destinationIndex)
 void Optimizer::run(void)
 {
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "Optimizer run" << commit;
+    timestamp += 1;
     try {
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "Before getActive Pairs" << commit;
         std::list<Pair> pairs = dataSource->getActivePairs();

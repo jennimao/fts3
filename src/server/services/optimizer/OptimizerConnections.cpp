@@ -1011,6 +1011,10 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") decrease" << commit;
                     }
                 }
+                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "FTS4:" << se << "," << resourceIndex \
+                << "," << timestamp << "," << current.avgThroughput << "," << current.maxThroughput \
+                << "," << current.avgActiveSlots << "," << current.successRate << "," << current.ema << commit;
+
             }
 
             previousSEStateMap[se] = currentResource->second;
@@ -1021,6 +1025,22 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         PairState &pairState = currentPairStateMap[*pair];
         // need to add the rationale for each pair 
+
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
+            << "FTS4: Current PairState Info: " << *pair \
+            << ", " << pair->source \
+            << ", " << pair->source \
+            << ", " << timestamp \
+            << ", " << pairState.weight \
+            << ", " << pairState.throughput \
+            << ", " << pairState.successRate \
+            << ", " << pairState.activeSlots \
+            << ", " << pairState.avgActiveSlots \
+            << ", " << pairState.optimizerDecision \
+            << ", Rationale for next time stamp: " << pairState.rationale \
+            << ", Proposed decision for next time stamp: " << pairState.proposedDecision << commit; 
+
+
         setOptimizerDecision(*pair, std::max(pairState.proposedDecision, 1), pairState, 
                             pairState.activeSlots - pairState.proposedDecision,
                             pairState.rationale, timer.elapsed());

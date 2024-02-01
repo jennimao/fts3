@@ -320,6 +320,7 @@ protected:
 
     int sourceIndex = 0;
     int destinationIndex = 1;
+    int timestamp = 0;
 
     // Read currentSEStateMap values into a StorageLimits object for the purposes of a single pair.
     void getStorageLimits(const Pair &pair, StorageLimits *limits);
