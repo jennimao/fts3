@@ -114,6 +114,8 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
         // Compute throughput values and an estimate of the actual number of connections (since it can deviate from optimizer decision) (used in Step 2)      
         dataSource->getCurrentIntervalTransferInfo(pair, timeFrame, current.activeSlots,
           &(current.throughput), &(current.filesizeAvg), &(current.filesizeStdDev), &(current.avgActiveSlots));
+
+        current.proposedDecision = current.activeSlots;
         
         // Save to map
         currentPairStateMap[pair] = current;
@@ -767,7 +769,7 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
         << ", Pair Weight: " << current.weight \
         << ", Previous Decision: " << previousPairStateMap[pair].optimizerDecision \
         << ", Final Decision: " << decision \
-        << ", Running: " << current.activeSlots \
+        << ", Running:/what we based the next decision on " << current.activeSlots \
         << ", Avg active connections: " << current.avgActiveSlots \
         << ", Queue: " << current.queueSize \
         << ", EMA: " << current.ema \
@@ -784,8 +786,7 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
 
     //Stores current PairState (including the optimizer decision) in the previousPairStateMap
     previousPairStateMap[pair] = current;
-    currentPairStateMap[pair].optimizerDecision = decision;
-    currentPairStateMap[pair].proposedDecision = decision; 
+    currentPairStateMap[pair].optimizerDecision = decision; 
     
     dataSource->storeOptimizerDecision(pair, decision, current, diff, rationale);
 
@@ -805,8 +806,8 @@ void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const 
         // if the pair uses this resource 
         if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
             // if none of the other proposed decisions so far are a decrease 
-            if (currentPair.proposedDecision == currentPair.optimizerDecision) {
-                currentPair.proposedDecision = currentPair.optimizerDecision + proposedIncrease;
+            if (currentPair.proposedDecision == currentPair.activeSlots) {
+                currentPair.proposedDecision = currentPair.activeSlots + proposedIncrease;
                 currentPair.rationale = "Resource" + se + "gradient increase";
             }
         }
@@ -832,8 +833,8 @@ void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::
     }
 
     // decrease the max overallocated pair by one as long as a stricter decrease has not occurred 
-    maxPair->proposedDecision = std::min(maxPair->proposedDecision, maxPair->optimizerDecision - 1);
-    if(maxPair->proposedDecision == maxPair->optimizerDecision - 1)
+    maxPair->proposedDecision = std::min(maxPair->proposedDecision, maxPair->activeSlots - 1);
+    if(maxPair->proposedDecision == maxPair->activeSlots - 1)
     {
         maxPair->rationale = "Decreased because max pair on" + se;
     }
@@ -869,13 +870,15 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                 for(auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
 
                     PairState &currentPair = currentPairStateMap[*pair];
-                    int proposedDecision = std::round(currentPair.optimizerDecision * beta); // I think this should be current?
+                    int proposedDecision = std::round(currentPair.activeSlots * beta);
 
                     if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
                         currentPair.rationale = "User limit reached or success rate is low on" + se + ": --> multiplicative decrease";
                         currentPair.proposedDecision = proposedDecision;
                       
                     }
+
+                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Source (0) Dest (1) hit tput limit" << commit;
                 }
             }
 
@@ -896,19 +899,23 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
 
                         if(deltaSlots != 0) {
                             gradient = deltaTput/deltaSlots;
+                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient << commit;
                         }
                         else {
                             gradient = deltaTput; //theoretically this shouldn't have that big of an impact. If slots don't change and tput increase, fine to increase, the reverse is also true
+                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient  << "no slot change" << commit;
                         }
                     }
                     else {
                         gradient = 1; //no info gradient is 1, probably starting off
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient  << "no previous info" << commit;
                     }
                 }
                 else
                 {
                     //starting, probe up
                     gradient = 1; 
+                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") gradient:" << gradient  << "no previous info 2" << commit;
                 }
                 
                 //////////////////////////////////////////////////////////////
@@ -918,6 +925,7 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                 {
                     // propose an increase by weight because resource is underutilized 
                     proposeWeightedPairIncrease(pairs, se, resourceIndex); 
+                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") increase" << commit;
                 }
                 else if (gradient == 0) {
                     // 90%: reduce max pair by one (loop through all pairs and save the max, propose a decrease on that pair)
@@ -931,14 +939,17 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                     if (random < decreaseProbability) {
                         // 90% case 
                         proposeDecreaseMaxPair(pairs, se, resourceIndex);
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") 90 percent case decrease" << commit;
                     }
                     else {
                         // 10% case
                         proposeWeightedPairIncrease(pairs, se, resourceIndex);
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") 10 percent case increase" << commit;
                     }
                 }
                 else {
                     proposeDecreaseMaxPair(pairs, se, resourceIndex);
+                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") decrease" << commit;
                 }
             }
         }
@@ -951,7 +962,7 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
         PairState &pairState = currentPairStateMap[*pair];
         // need to add the rationale for each pair 
         setOptimizerDecision(*pair, std::max(pairState.proposedDecision, 1), pairState, 
-                            pairState.optimizerDecision - pairState.proposedDecision,
+                            pairState.activeSlots - pairState.proposedDecision,
                             pairState.rationale, timer.elapsed());
     }
 }
