@@ -172,7 +172,7 @@ public:
             std::vector<StorageState> SEStates(2); 
 
             StorageState &sourceState = SEStates[0]; 
-            StorageState &destState = SEStates[0]; 
+            StorageState &destState = SEStates[1]; 
 
             sourceState.maxActive = i->get<int>("outbound_max_active", ind); 
             if (ind == soci::i_null) {

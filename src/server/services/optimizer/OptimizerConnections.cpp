@@ -61,13 +61,13 @@ void Optimizer::updateSEState(std::map<std::string, std::vector<StorageState>> &
     auto it = currentSEStateMap.find(SE);
     // index refers to whether the SE is acting as a source(0) or destination(1)
     if (it != currentSEStateMap.end() && it->second[index].maxThroughput > 0) {
-        auto source = it->second[index];
+        auto seState = it->second[index];
 
-        source.avgThroughput += pair.throughput;
-        source.numPairs += 1;
-        source.activeSlots += pair.activeSlots; 
-        source.avgActiveSlots += pair.avgActiveSlots; 
-        source.successRate = (source.successRate + pair.successRate) / 2;
+        seState.avgThroughput += pair.throughput;
+        seState.numPairs += 1;
+        seState.activeSlots += pair.activeSlots; 
+        seState.avgActiveSlots += pair.avgActiveSlots; 
+        seState.successRate += pair.successRate;
     }
 }
 
@@ -866,7 +866,12 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
             ////////////////////////////////////////////////////////////////////////////////////
             // Throughput limits exceeded or success rate is low --> multiplicative decrease
             ////////////////////////////////////////////////////////////////////////////////////
-            if(current.avgThroughput > current.maxThroughput || current.successRate <= lowSuccessRate) {
+
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current success rate " << (current.successRate / current.numPairs) << commit;
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current avg throughput " << current.avgThroughput << commit;
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Current max throughput " << current.maxThroughput << commit;
+
+            if(current.avgThroughput > current.maxThroughput || (current.successRate / current.numPairs) <= lowSuccessRate) {
                 for(auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
 
                     PairState &currentPair = currentPairStateMap[*pair];
@@ -875,10 +880,9 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                     if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
                         currentPair.rationale = "User limit reached or success rate is low on" + se + ": --> multiplicative decrease";
                         currentPair.proposedDecision = proposedDecision;
-                      
-                    }
 
-                    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Source (0) Dest (1) hit tput limit" << commit;
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Source (0) Dest (1) hit tput limit" << commit;
+                    }
                 }
             }
 
