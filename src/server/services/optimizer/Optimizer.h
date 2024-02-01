@@ -318,8 +318,8 @@ protected:
     bool netLinkThroughputLimitEnforcement;
     bool proportionalDecreaseThroughputLimitEnforcement;
 
-    int sourceIndex;
-    int destinationIndex;
+    int sourceIndex = 0;
+    int destinationIndex = 1;
 
     // Read currentSEStateMap values into a StorageLimits object for the purposes of a single pair.
     void getStorageLimits(const Pair &pair, StorageLimits *limits);
