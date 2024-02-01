@@ -76,11 +76,6 @@ void Optimizer::updateSEState(std::map<std::string, std::vector<StorageState>> &
 // Input: List of active pairs, as well as SQL database data.
 void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
     
-    //move previously computed resource states into previousStateMap
-    for (auto it = currentSEStateMap.begin(); it != currentSEStateMap.end(); ++it) {
-        previousSEStateMap[it->first] = it->second;
-    }
-    
     // Initializes currentSEStateMap with limit information from
     // t_se table in the SQL database.
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "getStorageStates" << commit;
@@ -805,7 +800,7 @@ void Optimizer::setOptimizerDecision(const Pair &pair, int decision, const PairS
 void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const std::string se, const int resourceIndex) {
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         PairState &currentPair = currentPairStateMap[*pair];
-        int proposedIncrease = std::round(currentPair.weight * increaseStepSize); 
+        int proposedIncrease = std::max(1.0, std::round(currentPair.weight * increaseStepSize)); 
     
         // if the pair uses this resource 
         if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
@@ -813,11 +808,6 @@ void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const 
             if (currentPair.proposedDecision == currentPair.optimizerDecision) {
                 currentPair.proposedDecision = currentPair.optimizerDecision + proposedIncrease;
                 currentPair.rationale = "Resource" + se + "gradient increase";
-            }
-            else if (currentPair.proposedDecision > currentPair.optimizerDecision && currentPair.optimizerDecision + proposedIncrease > currentPair.proposedDecision )
-            {
-                currentPair.proposedDecision = currentPair.optimizerDecision + proposedIncrease;
-                
             }
         }
     }
@@ -864,9 +854,10 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
     double ourEmaAlpha = 0.2; //feel free to change just did what Chatgpt said
 
     for (auto currentResource = currentSEStateMap.begin(); currentResource != currentSEStateMap.end(); ++currentResource) {
+        const std::string &se = currentResource->first;
 
         for(int resourceIndex = 0; resourceIndex < 2; resourceIndex++){ //for source and dest indexes
-            const std::string &se = currentResource->first;
+            
             StorageState &current = currentResource->second[resourceIndex];
 
             current.ema = exponentialMovingAverage(current.avgThroughput, ourEmaAlpha, current.ema);
@@ -874,18 +865,16 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
             ////////////////////////////////////////////////////////////////////////////////////
             // Throughput limits exceeded or success rate is low --> multiplicative decrease
             ////////////////////////////////////////////////////////////////////////////////////
-            if(current.avgThroughput > current.maxThroughput || current.activeSlots > current.maxActive || current.successRate <= lowSuccessRate) { // are we getting rid of the active slots? 
+            if(current.avgThroughput > current.maxThroughput || current.successRate <= lowSuccessRate) {
                 for(auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
 
                     PairState &currentPair = currentPairStateMap[*pair];
                     int proposedDecision = std::round(currentPair.optimizerDecision * beta); // I think this should be current?
 
                     if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
-                        if(proposedDecision < currentPair.proposedDecision)
-                        {
-                            currentPair.rationale = "User limit reached or success rate is low on" + se + ": --> multiplicative decrease";
-                            currentPair.proposedDecision = proposedDecision;
-                        }
+                        currentPair.rationale = "User limit reached or success rate is low on" + se + ": --> multiplicative decrease";
+                        currentPair.proposedDecision = proposedDecision;
+                      
                     }
                 }
             }
@@ -909,17 +898,17 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                             gradient = deltaTput/deltaSlots;
                         }
                         else {
-                            gradient = deltaTput; //LOGIC CHECK -- this in theory shouldn't happen but it's possible due to inertia
+                            gradient = deltaTput; //theoretically this shouldn't have that big of an impact. If slots don't change and tput increase, fine to increase, the reverse is also true
                         }
                     }
                     else {
-                        gradient = 0; //no info gradient is 0
+                        gradient = 1; //no info gradient is 1, probably starting off
                     }
                 }
                 else
                 {
-                    //no previous info
-                    gradient = 0; ///IDK
+                    //starting, probe up
+                    gradient = 1; 
                 }
                 
                 //////////////////////////////////////////////////////////////
@@ -953,13 +942,15 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                 }
             }
         }
+
+        previousSEStateMap[se] = currentResource->second;
     }
 
     // set the optimizer decision for pairs 
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         PairState &pairState = currentPairStateMap[*pair];
         // need to add the rationale for each pair 
-        setOptimizerDecision(*pair, pairState.proposedDecision, pairState, 
+        setOptimizerDecision(*pair, std::max(pairState.proposedDecision, 1), pairState, 
                             pairState.optimizerDecision - pairState.proposedDecision,
                             pairState.rationale, timer.elapsed());
     }
