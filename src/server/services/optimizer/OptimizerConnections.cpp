@@ -82,11 +82,12 @@ static boost::posix_time::time_duration calculateTimeFrame(time_t avgDuration)
 }
 
 
-void Optimizer::updateSEState(std::map<std::string, std::vector<StorageState>> &currentSEStateMap, std::string SE, int index, PairState &pair) {
-    auto it = currentSEStateMap.find(SE);
+void Optimizer::updateSEState(std::map<std::string, std::vector<StorageState>> &currentSEStateMap, std::string se, int index, PairState &pair) {
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Updating resource " << se << "(" << index << ")" << commit;
+
     // index refers to whether the SE is acting as a source(0) or destination(1)
-    if (it != currentSEStateMap.end() && it->second[index].maxThroughput > 0) {
-        auto seState = it->second[index];
+    if (currentSEStateMap.find(se) != currentSEStateMap.end()) {
+        StorageState &seState = currentSEStateMap[se][index];
 
         seState.avgThroughput += pair.throughput;
         seState.numPairs += 1;
@@ -97,6 +98,10 @@ void Optimizer::updateSEState(std::map<std::string, std::vector<StorageState>> &
             seState.successRate = 0;
         }
         seState.successRate += pair.successRate;
+
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << index << ") updated success rate " << (seState.successRate) << commit;
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << index << ") Current avg throughput " << seState.avgThroughput << commit;
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << index << ") Current max throughput " << seState.maxThroughput << commit;
     }
 }
 
@@ -847,27 +852,30 @@ void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const 
 void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se, const int resourceIndex) {
 
     double maxAllocation = 0.0; 
-    PairState *maxPair; 
+    PairState *maxPair = nullptr; 
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: ran proposeWeightedPairDecrease" << commit;
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
             PairState &currentPair = currentPairStateMap[*pair];
             double allocation = currentPair.throughput / currentPair.avgActiveSlots; 
             
-            if (allocation >= maxAllocation) {
+            if (allocation > maxAllocation) {
                 maxAllocation = allocation; 
                 maxPair = &currentPair; // save the current max allocated pair 
             }
         }
     }
 
-    // decrease the max overallocated pair by one as long as a stricter decrease has not occurred 
-    maxPair->proposedDecision = std::min(maxPair->proposedDecision, maxPair->activeSlots - 1);
-    if(maxPair->proposedDecision == maxPair->activeSlots - 1)
-    {
-        maxPair->rationale = "Decreased because max pair on " + se;
+    if (maxPair != nullptr) {
+        // decrease the max overallocated pair by one as long as a stricter decrease has not occurred 
+        maxPair->proposedDecision = std::min(maxPair->proposedDecision, maxPair->activeSlots - 1);
+        if(maxPair->proposedDecision == maxPair->activeSlots - 1) {
+            maxPair->rationale = "Decreased because max pair on " + se;
+        }
+    } 
+    else {
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: No max pair found" << commit;
     }
-   
 }
 
 
