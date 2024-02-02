@@ -112,7 +112,7 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "getNetLinkStates" << commit;
     dataSource->getNetLinkStates(&currentNetLinkStateMap); 
 
-    int index = 1; 
+
     for (auto i = pairs.begin(); i != pairs.end(); ++i) {
         // ===============================================        
         // STEP 1: DERIVING PAIR STATE
@@ -133,9 +133,8 @@ void Optimizer::getCurrentIntervalInputState(const std::list<Pair> &pairs) {
         
         // Set pair weight if us er specified, otherwise set to the index of the pair (to add some variation)
         current.weight = dataSource->getPairWeight(pair);
-        current.weight = (current.weight != -1) ? current.weight : index;
+        current.weight = (current.weight != -1) ? current.weight : 1;
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Pair weight for " << pair << ": " << current.weight << commit;
-        index++; 
 
         // Compute the links associated with the source-destination pair 
         current.netLinks = dataSource->getNetLinks(pair); 
@@ -838,7 +837,7 @@ void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const 
             // if none of the other proposed decisions so far are a decrease 
             if (currentPair.proposedDecision == currentPair.activeSlots) {
                 currentPair.proposedDecision = currentPair.activeSlots + proposedIncrease;
-                currentPair.rationale = "Resource" + se + "gradient increase";
+                currentPair.rationale = "Resource " + se + " gradient increase";
             }
         }
     }
@@ -866,7 +865,7 @@ void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::
     maxPair->proposedDecision = std::min(maxPair->proposedDecision, maxPair->activeSlots - 1);
     if(maxPair->proposedDecision == maxPair->activeSlots - 1)
     {
-        maxPair->rationale = "Decreased because max pair on" + se;
+        maxPair->rationale = "Decreased because max pair on " + se;
     }
    
 }
@@ -923,7 +922,7 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                         int proposedDecision = stochasticRounding(currentPair.activeSlots * beta);
 
                         if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
-                            currentPair.rationale = "User limit reached or success rate is low on" + se + ": --> multiplicative decrease";
+                            currentPair.rationale = "User limit reached or success rate is low on " + se + " : --> multiplicative decrease";
                             currentPair.proposedDecision = proposedDecision;
 
                             FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Resource " << se << "(" << resourceIndex << ") Source (0) Dest (1) hit tput limit" << commit;
@@ -1029,7 +1028,7 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
             << "FTS4: Current PairState Info: " << *pair \
             << ", " << pair->source \
-            << ", " << pair->source \
+            << ", " << pair->destination \
             << ", " << timestamp \
             << ", " << pairState.weight \
             << ", " << pairState.throughput \
