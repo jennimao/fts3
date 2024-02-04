@@ -850,14 +850,16 @@ void Optimizer::proposeWeightedPairIncrease(const std::list<Pair> &pairs, const 
 
 
 void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::string se, const int resourceIndex) {
-
     double maxAllocation = 0.0; 
     PairState *maxPair = nullptr; 
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: ran proposeWeightedPairDecrease" << commit;
     for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
         if ((pair->source == se && resourceIndex == sourceIndex) || (pair->destination == se && resourceIndex == destinationIndex)) {
             PairState &currentPair = currentPairStateMap[*pair];
-            double allocation = currentPair.throughput / currentPair.avgActiveSlots; 
+            double allocation = currentPair.throughput / currentPair.weight; 
+
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: allocation of pair " << pair->source << " " << pair->destination 
+                                             << ": " << static_cast<int>(allocation) << commit;
             
             if (allocation > maxAllocation) {
                 maxAllocation = allocation; 
@@ -865,6 +867,9 @@ void Optimizer::proposeDecreaseMaxPair(const std::list<Pair> &pairs, const std::
             }
         }
     }
+
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: max allocation on se " << se 
+                                     << ": " << static_cast<int>(maxAllocation) << commit;
 
     if (maxPair != nullptr) {
         // decrease the max overallocated pair by one as long as a stricter decrease has not occurred 
@@ -886,6 +891,140 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
     boost::timer::cpu_timer timer;
     std::stringstream rationale;
 
+    int globalSlots = 33; 
+    int minGlobalSlots = 28; 
+
+    int actualSlots = 0; 
+
+
+    // add up the total slots for all resources 
+    for (auto currentResource = currentSEStateMap.begin(); currentResource != currentSEStateMap.end(); ++currentResource) {
+        const std::string &se = currentResource->first;
+        if (se != "*") {
+            for(int resourceIndex = 0; resourceIndex < 2; resourceIndex++) { //for source and dest indexes
+                actualSlots += currentResource->second[resourceIndex].activeSlots;
+                
+            }
+        }
+    }
+
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
+            << "FTS4NEW: Global slots " << globalSlots << 
+            ", Actual slots: " << (actualSlots / 2) << commit;
+
+    if ((actualSlots / 2) <= minGlobalSlots) {
+
+        // increase optimizer decision for each pair by weight 
+        for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
+            PairState &pairState = currentPairStateMap[*pair];
+            int proposedIncrease = std::max(1, stochasticRounding(pairState.weight * 1));
+            pairState.proposedDecision = pairState.activeSlots + proposedIncrease;
+            pairState.rationale = "Global slots increase";
+
+            // need to add the rationale for each pair 
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
+                << "FTS4NEW: Current PairState Info: " << *pair \
+                << ", " << pair->source \
+                << ", " << pair->destination \
+                << ", " << timestamp \
+                << ", " << pairState.weight \
+                << ", " << pairState.throughput \
+                << ", " << pairState.successRate \
+                << ", " << pairState.activeSlots \
+                << ", " << pairState.avgActiveSlots \
+                << ", " << pairState.optimizerDecision \
+                << ", Rationale for next time stamp: " << pairState.rationale \
+                << ", Proposed decision for next time stamp: " << pairState.proposedDecision << commit; 
+
+
+            setOptimizerDecision(*pair, std::max(pairState.proposedDecision, 1), pairState, 
+                                pairState.proposedDecision - pairState.activeSlots,
+                                pairState.rationale, timer.elapsed());
+        }
+    }
+    else {
+        // pick a random resource to decrease the max flow on 
+        std::random_device rd;
+        std::mt19937 gen(rd());
+
+        // Create a vector of se keys
+        std::vector<std::string> keys;
+        for (const auto& se : currentSEStateMap) {
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
+                << "S&J: Resource (creation of random keys): " << se.first << commit;
+            if (se.first != "*") {
+                // if there are pairs using the resource 
+                if (se.second[0].numPairs > 0 || se.second[1].numPairs > 0) {
+                    // if this resource is at capacity 
+                    if (se.second[0].avgThroughput >= se.second[0].maxThroughput || se.second[1].avgThroughput >= se.second[1].maxThroughput) {
+                        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
+                            << "S&J: Resource at capacity added to list: " << se.first << commit;
+                        keys.push_back(se.first);
+                    }
+                }
+            }
+        }
+
+        // Distribution to get a random index
+    
+        if (keys.size() == 0) {
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: No resources at capacity" << commit;
+        }
+        else {
+            std::uniform_int_distribution<> distrib(0, keys.size() - 1);
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "S&J: Size of keys after the loop: " << keys.size() << commit;
+            int randomIndex = distrib(gen);
+
+            std::string randomSE = keys[randomIndex];
+
+            // Distribution to get a random index
+            std::uniform_int_distribution<> distribIndex(0, 1);
+            int resourceIndex = distribIndex(gen);
+
+            StorageState &resourceState = currentSEStateMap[randomSE][resourceIndex];
+            // need to make this random too 
+            if (resourceState.numPairs > 0 && resourceState.avgThroughput >= resourceState.maxThroughput) {
+                proposeDecreaseMaxPair(pairs, randomSE, resourceIndex);
+
+                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
+                    << "S&J: Randomly chosen resource: " << randomSE << " index " << resourceIndex << commit;
+            }
+            else {
+                proposeDecreaseMaxPair(pairs, randomSE, !resourceIndex);
+                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
+                    << "S&J: Randomly chosen resource: " << randomSE << " index " << !resourceIndex << commit;
+            }
+
+        }
+
+
+        // set the new optimizer decision for each pair 
+        for (auto pair = pairs.begin(); pair != pairs.end(); ++pair) {
+            PairState &pairState = currentPairStateMap[*pair];
+
+            // need to add the rationale for each pair 
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) \
+                << "FTS4NEW: Current PairState Info: " << *pair \
+                << ", " << pair->source \
+                << ", " << pair->destination \
+                << ", " << timestamp \
+                << ", " << pairState.weight \
+                << ", " << pairState.throughput \
+                << ", " << pairState.successRate \
+                << ", " << pairState.activeSlots \
+                << ", " << pairState.avgActiveSlots \
+                << ", " << pairState.optimizerDecision \
+                << ", Rationale for next time stamp: " << pairState.rationale \
+                << ", Proposed decision for next time stamp: " << pairState.proposedDecision << commit; 
+
+            setOptimizerDecision(*pair, std::max(pairState.proposedDecision, 1), pairState, 
+                                pairState.proposedDecision - pairState.activeSlots,
+                                pairState.rationale, timer.elapsed());
+        }
+    }
+
+
+    /*
     // multiplicative decrease factor
     double beta = 0.8;
     //alpha val for calculating ema
@@ -1052,6 +1191,7 @@ void Optimizer::runOptimizerForResources(const std::list<Pair> &pairs)
                             pairState.activeSlots - pairState.proposedDecision,
                             pairState.rationale, timer.elapsed());
     }
+    */
 }
 }
 }
